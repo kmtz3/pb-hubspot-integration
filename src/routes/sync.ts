@@ -9,17 +9,33 @@ export const router = Router();
 // In-memory map of SSE emitters keyed by runId
 const sseEmitters = new Map<string, SseEmitter>();
 
+// A run that hasn't updated its lock in this long is treated as dead. Cloud
+// Run can kill an instance after the request returns 200 (the actual sync
+// runs in setImmediate background), so the inProgress flag occasionally gets
+// orphaned. Real syncs are well under this; widen only if you observe a
+// legitimate long-running case being preempted.
+const STALE_LOCK_MS = 30 * 60 * 1000;
+
 router.post('/run', async (req, res) => {
   try {
     const syncConfig = await getSyncConfig();
     if (syncConfig.inProgress) {
-      return res.status(409).json({ error: 'Sync already in progress' });
+      const startedAt = syncConfig.inProgressStartedAt
+        ? new Date(syncConfig.inProgressStartedAt).getTime()
+        : 0;
+      const ageMs = Date.now() - startedAt;
+      if (startedAt && ageMs < STALE_LOCK_MS) {
+        return res.status(409).json({ error: 'Sync already in progress' });
+      }
+      console.warn(
+        `[/api/sync/run] clearing stale inProgress lock (started ${syncConfig.inProgressStartedAt ?? 'unknown'}, ${Math.round(ageMs / 1000)}s ago)`,
+      );
     }
 
     const { trigger = 'ui' } = req.body as { trigger?: 'ui' | 'scheduler' };
     const runId = randomUUID();
 
-    await updateSyncConfig({ inProgress: true });
+    await updateSyncConfig({ inProgress: true, inProgressStartedAt: new Date().toISOString() });
 
     // Start sync in background
     const emitter: SseEmitter = (event) => {

@@ -366,6 +366,10 @@ export async function runSync(options: {
       resolvedViaFallback,
     });
 
+    // Note: inProgressStartedAt is intentionally not cleared here. The route's
+    // staleness check is gated on inProgress=true, so the previous timestamp
+    // becomes irrelevant the moment we set inProgress=false. The next run
+    // start overwrites it. Avoids needing FieldValue.delete() plumbing.
     await updateSyncConfig({
       lastSyncAt: finishedAt,
       lastSyncStatus: status,

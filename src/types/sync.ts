@@ -18,6 +18,10 @@ export interface SyncConfig {
   lastSyncStats?: SyncStats;
   domainFallbackEnabled: boolean;
   inProgress: boolean;
+  // Timestamp of when the current run started. Lets the route handler detect
+  // a stale lock (Cloud Run can kill the instance mid-sync since the route
+  // returns 200 and continues in setImmediate, orphaning inProgress=true).
+  inProgressStartedAt?: string;
   inProgressStats?: Partial<SyncStats>;
   historyRetentionDays?: number;
   debugLogging?: boolean;
