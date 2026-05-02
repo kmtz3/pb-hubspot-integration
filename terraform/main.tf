@@ -64,20 +64,16 @@ resource "google_project_iam_member" "firestore_user" {
 }
 
 # ── Secret Manager ────────────────────────────────────────────────────────────
-# Secrets are created empty here; populate values with:
+# Static infra secrets (session signing key, OAuth client). Populate values with:
 #   gcloud secrets versions add <name> --data-file=-
-
-resource "google_secret_manager_secret" "hubspot_api_key" {
-  secret_id = "HUBSPOT_API_KEY"
-  replication { auto {} }
-  depends_on = [google_project_service.secretmanager]
-}
-
-resource "google_secret_manager_secret" "pb_api_key" {
-  secret_id = "PB_API_KEY"
-  replication { auto {} }
-  depends_on = [google_project_service.secretmanager]
-}
+#
+# Application-level tokens (HubSpot, Productboard) are NOT pre-created here —
+# the Connect-tab UI calls writeSecret() at runtime to create
+# `hubspot-token` / `productboard-token` and add new versions on each save.
+# That dynamic flow needs secretmanager.secrets.create + versions.add at the
+# project level on the runtime SA, granted out-of-band (e.g. via
+# roles/secretmanager.secretCreator). The project-level secretAccessor binding
+# below covers reads for both static and dynamically-created secrets.
 
 resource "google_secret_manager_secret" "session_secret" {
   secret_id = "SESSION_SECRET"
@@ -97,22 +93,13 @@ resource "google_secret_manager_secret" "google_client_secret" {
   depends_on = [google_project_service.secretmanager]
 }
 
-# SA needs secretAccessor on each secret
-locals {
-  secret_ids = [
-    google_secret_manager_secret.hubspot_api_key.secret_id,
-    google_secret_manager_secret.pb_api_key.secret_id,
-    google_secret_manager_secret.session_secret.secret_id,
-    google_secret_manager_secret.google_client_id.secret_id,
-    google_secret_manager_secret.google_client_secret.secret_id,
-  ]
-}
-
-resource "google_secret_manager_secret_iam_member" "sa_accessor" {
-  for_each  = toset(local.secret_ids)
-  secret_id = each.value
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.sync_sa.email}"
+# Project-level read access — covers the static secrets above plus the
+# Connect-tab tokens (hubspot-token, productboard-token) that Terraform
+# does not declare, and any future runtime-created secret.
+resource "google_project_iam_member" "secret_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.sync_sa.email}"
 }
 
 # ── Cloud Run ─────────────────────────────────────────────────────────────────
@@ -168,25 +155,12 @@ resource "google_cloud_run_v2_service" "sync" {
         value = google_cloud_run_v2_service.sync.uri
       }
 
-      # Secrets injected as env vars at runtime
-      env {
-        name = "HUBSPOT_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.hubspot_api_key.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "PB_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.pb_api_key.secret_id
-            version = "latest"
-          }
-        }
-      }
+      # Secrets injected as env vars at runtime.
+      # HUBSPOT_API_KEY / PB_API_KEY are intentionally NOT injected anymore —
+      # those tokens are stored in Secret Manager by the Connect-tab UI and
+      # resolved at request time via getHubSpotToken() / getPBToken(). Wiring
+      # them as env vars here would let stale or empty values shadow the
+      # Firestore-stored connection (env wins in those token getters).
       env {
         name = "SESSION_SECRET"
         value_source {
