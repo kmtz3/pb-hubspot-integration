@@ -17,6 +17,9 @@ if (!getApps().length) {
 }
 
 const app = express();
+// Cloud Run terminates TLS at its frontend and forwards plain HTTP with X-Forwarded-Proto.
+// Without this, Express treats the request as insecure and refuses to set Secure session cookies.
+app.set('trust proxy', 1);
 app.use(express.json());
 
 app.use(sessionMiddleware);
