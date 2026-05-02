@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, Loader2, XCircle, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
+import { RefreshCw, Loader2, XCircle, CheckCircle, AlertCircle, ChevronDown, CalendarClock } from 'lucide-react';
 import { useConfig, useSaveConfig, useStartSync, useCancelSync, useSyncRuns } from '../../hooks/api';
 import { useSyncStream } from '../../hooks/useSyncStream';
 import InlineAlert from '../ui/InlineAlert';
@@ -19,13 +19,30 @@ const TIME_OPTIONS = ['00:00','01:00','02:00','03:00','04:00','05:00','06:00',
   '07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00',
   '15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
 
+// Ordered longest interval → shortest (Manual stays at top as the "no schedule" choice).
 const SCHEDULE_OPTIONS: { value: SyncConfig['schedule']; label: string; desc: string }[] = [
   { value: 'manual',  label: 'Manual only',        desc: "Sync runs only when you click 'Sync now'. No scheduled jobs." },
-  { value: 'daily',   label: 'Daily',               desc: 'Recommended. One full sweep every night.' },
   { value: 'weekly',  label: 'Weekly',              desc: 'One sweep per week — ideal if the source data is stable.' },
+  { value: 'daily',   label: 'Daily',               desc: 'Recommended. One full sweep every night.' },
   { value: 'hourly',  label: 'Hourly',              desc: 'Picks up new HubSpot records within an hour. Heavier API usage.' },
   { value: 'every15', label: 'Every 15 minutes',    desc: 'Near real-time. Use only with strict account filters.' },
 ];
+
+// Human-readable summary of the saved schedule for the top banner. Returns null
+// for `manual` (no banner) so the user only sees this when something is actually
+// scheduled.
+function formatSchedule(sync: SyncConfig): string | null {
+  const time = sync.scheduleTime ?? '02:00';
+  const tz = sync.timezone ?? 'America/New_York';
+  switch (sync.schedule) {
+    case 'manual':  return null;
+    case 'weekly':  return `${sync.scheduleDay ?? 'Monday'}s at ${time} (${tz})`;
+    case 'daily':   return `Daily at ${time} (${tz})`;
+    case 'hourly':  return 'Every hour, on the hour';
+    case 'every15': return 'Every 15 minutes';
+    default:        return null;
+  }
+}
 
 type ScheduleForm = Pick<SyncConfig, 'schedule' | 'scheduleTime' | 'scheduleDay' | 'timezone'>;
 
@@ -360,6 +377,21 @@ export default function Schedule() {
           Cloud Scheduler triggers a sync at the chosen cadence. Manual syncs run immediately and bypass any incremental window.
         </p>
       </div>
+
+      {sync && formatSchedule(sync) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 16px', marginBottom: 16,
+          background: 'var(--accent)', border: '1px solid var(--border)',
+          borderRadius: 8, color: 'var(--accent-foreground)',
+        }}>
+          <CalendarClock size={18} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+          <div style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>
+            <span style={{ fontWeight: 600 }}>Scheduled run set</span>
+            <span style={{ color: 'var(--muted-foreground)' }}> · next sync {formatSchedule(sync)}</span>
+          </div>
+        </div>
+      )}
 
       {isSyncing && activeRunId && (
         <SyncProgressCard
