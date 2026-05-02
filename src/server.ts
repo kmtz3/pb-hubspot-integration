@@ -3,7 +3,7 @@ import express from 'express';
 import passport from 'passport';
 import path from 'path';
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { sessionMiddleware, requireAuth, validateAuthEnv } from './lib/auth';
+import { sessionMiddleware, requireAuth, requireAuthOrScheduler, validateAuthEnv } from './lib/auth';
 import authRouter from './routes/auth';
 import { router as connectionsRouter } from './routes/connections';
 import { router as configRouter } from './routes/config';
@@ -40,7 +40,7 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-app.use('/api/sync',         syncRouter);
+app.use('/api/sync',         requireAuthOrScheduler, syncRouter);
 app.use('/api/connections',  requireAuth, connectionsRouter);
 app.use('/api/config',       requireAuth, configRouter);
 app.use('/api/filters',      requireAuth, previewRouter);

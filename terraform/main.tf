@@ -159,6 +159,14 @@ resource "google_cloud_run_v2_service" "sync" {
         name  = "GCS_JOB_NAME"
         value = "projects/${var.project_id}/locations/${var.region}/jobs/${var.service_name}-scheduler"
       }
+      env {
+        name  = "SCHEDULER_SA_EMAIL"
+        value = google_service_account.scheduler_sa.email
+      }
+      env {
+        name  = "SCHEDULER_OIDC_AUDIENCE"
+        value = google_cloud_run_v2_service.sync.uri
+      }
 
       # Secrets injected as env vars at runtime
       env {

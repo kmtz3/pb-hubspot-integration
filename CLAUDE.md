@@ -141,6 +141,8 @@ Copy `.env.example` to `.env` – never commit `.env`.
 | `GOOGLE_ALLOWED_EMAILS` | Optional comma-separated allowlist; leave blank to allow any `@GOOGLE_ALLOWED_DOMAIN` |
 | `SESSION_SECRET` | Express session signing secret (`openssl rand -base64 32`) |
 | `APP_URL` | Public service URL – `http://localhost:5173` for dev, Cloud Run URL in production |
+| `SCHEDULER_SA_EMAIL` | Service account email of the Cloud Scheduler invoker. Required in production – `requireAuthOrScheduler` accepts a Google-signed OIDC token from this account on `/api/sync/run`. Leave blank in local dev. |
+| `SCHEDULER_OIDC_AUDIENCE` | Expected `aud` claim on Cloud Scheduler OIDC tokens – must match what Terraform configured on the scheduler job (typically the Cloud Run service URI). Defaults to `APP_URL` when unset; set explicitly when `APP_URL` is a custom domain. |
 | `SYNC_CONCURRENCY` | Companies processed in parallel, 1–25 (default `5`) |
 | `DRY_RUN` | Set `true` to log intended writes without calling any API |
 | `LOG_LEVEL` | `info`, `debug`, etc. |

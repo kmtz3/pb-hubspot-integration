@@ -1,6 +1,7 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import session from 'express-session';
+import { OAuth2Client } from 'google-auth-library';
 import type { Request, Response, NextFunction } from 'express';
 
 export interface AuthUser {
@@ -21,6 +22,10 @@ const ALLOWED_DOMAIN = process.env.GOOGLE_ALLOWED_DOMAIN ?? '';
 const ALLOWED_EMAILS = process.env.GOOGLE_ALLOWED_EMAILS
   ? process.env.GOOGLE_ALLOWED_EMAILS.split(',').map(e => e.trim().toLowerCase())
   : [];
+
+// Service account email of the Cloud Scheduler invoker. Tokens it signs are accepted
+// on /api/sync/run as an alternative to a session cookie.
+const SCHEDULER_SA_EMAIL = (process.env.SCHEDULER_SA_EMAIL ?? '').toLowerCase();
 
 // Only register the Google strategy when credentials are present.
 // In local dev without .env OAuth values, auth is bypassed entirely (see requireAuth below).
@@ -94,10 +99,63 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 }
 
+// Shared client for verifying Google-signed OIDC ID tokens (Cloud Scheduler).
+const oidcClient = new OAuth2Client();
+
+// Verify a Google-signed OIDC ID token issued to Cloud Scheduler. Resolves to the
+// token's email claim if the signature, expiration, audience and email match;
+// resolves to null otherwise.
+async function verifySchedulerOidcToken(token: string): Promise<string | null> {
+  // Audience must match what Cloud Scheduler signed the token for (the Cloud Run
+  // service URI, configured in terraform). Falls back to APP_URL when they coincide.
+  const audience = process.env.SCHEDULER_OIDC_AUDIENCE ?? process.env.APP_URL;
+  if (!audience || !SCHEDULER_SA_EMAIL) return null;
+  try {
+    const ticket = await oidcClient.verifyIdToken({
+      idToken: token,
+      audience,
+    });
+    const payload = ticket.getPayload();
+    if (!payload) return null;
+    if (payload.iss !== 'https://accounts.google.com' && payload.iss !== 'accounts.google.com') return null;
+    if (!payload.email_verified) return null;
+    const email = payload.email?.toLowerCase();
+    if (!email || email !== SCHEDULER_SA_EMAIL) return null;
+    return email;
+  } catch {
+    return null;
+  }
+}
+
+// Allows either a signed-in admin session OR a valid Cloud Scheduler OIDC token.
+// Used to gate /api/sync/* — admins drive runs from the UI, the scheduler invokes
+// POST /api/sync/run with an Authorization: Bearer <id_token> header.
+export function requireAuthOrScheduler(req: Request, res: Response, next: NextFunction): void {
+  if (IS_DEV && !OAUTH_CONFIGURED) return next();
+  if (req.isAuthenticated()) return next();
+
+  const authz = req.headers.authorization ?? '';
+  const match = /^Bearer\s+(.+)$/i.exec(authz);
+  if (match) {
+    void verifySchedulerOidcToken(match[1].trim()).then(email => {
+      if (email) return next();
+      res.status(401).json({ error: 'Authentication required' });
+    });
+    return;
+  }
+
+  if (req.headers.accept?.includes('application/json')) {
+    res.status(401).json({ error: 'Authentication required' });
+  } else {
+    (req.session as any).returnTo = req.originalUrl;
+    res.redirect('/auth/google');
+  }
+}
+
 // In production, fails fast if required auth env vars are missing.
 // In dev, logs a warning so the server still starts for local work.
 export function validateAuthEnv(): void {
-  const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_ALLOWED_DOMAIN', 'SESSION_SECRET', 'APP_URL'];
+  const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_ALLOWED_DOMAIN', 'SESSION_SECRET', 'APP_URL', 'SCHEDULER_SA_EMAIL'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length === 0) return;
   if (!IS_DEV) throw new Error(`Missing auth env vars: ${missing.join(', ')}`);
