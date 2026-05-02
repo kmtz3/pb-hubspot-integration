@@ -66,6 +66,22 @@ router.patch('/', async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
+    // Log the full error to Cloud Run stdout so failed scheduler reconciles
+    // are debuggable from Logs Explorer instead of only via the 500 response
+    // body. gRPC errors from @google-cloud/scheduler hide field_violations on
+    // non-enumerable props, so dump everything explicitly.
+    const e = err as {
+      message?: string; code?: number; details?: unknown;
+      metadata?: unknown; statusDetails?: unknown; stack?: string;
+    };
+    console.error('[PATCH /api/config] save failed', {
+      message: e.message,
+      code: e.code,
+      details: e.details,
+      metadata: e.metadata,
+      statusDetails: e.statusDetails,
+      stack: e.stack,
+    });
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });
   }

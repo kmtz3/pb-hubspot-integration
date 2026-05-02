@@ -28,20 +28,99 @@ const SCHEDULE_OPTIONS: { value: SyncConfig['schedule']; label: string; desc: st
   { value: 'every15', label: 'Every 15 minutes',    desc: 'Near real-time. Use only with strict account filters.' },
 ];
 
-// Human-readable summary of the saved schedule for the top banner. Returns null
-// for `manual` (no banner) so the user only sees this when something is actually
-// scheduled.
-function formatSchedule(sync: SyncConfig): string | null {
-  const time = sync.scheduleTime ?? '02:00';
-  const tz = sync.timezone ?? 'America/New_York';
-  switch (sync.schedule) {
-    case 'manual':  return null;
-    case 'weekly':  return `${sync.scheduleDay ?? 'Monday'}s at ${time} (${tz})`;
-    case 'daily':   return `Daily at ${time} (${tz})`;
-    case 'hourly':  return 'Every hour, on the hour';
-    case 'every15': return 'Every 15 minutes';
-    default:        return null;
+const DAY_INDEX: Record<string, number> = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+  Thursday: 4, Friday: 5, Saturday: 6,
+};
+
+// Convert a wall-clock date+time interpreted in `tz` into the absolute UTC
+// instant. Works by finding the offset between (year/month/day/hh/mm as UTC)
+// and what `tz` would show for that same instant, then subtracting it.
+// Edge case: ambiguous DST hours (spring-forward gap, fall-back overlap) land
+// on whichever side Intl picks — same ambiguity Cloud Scheduler has, so safe.
+function zonedDateTimeToUTC(
+  year: number, month: number, day: number,
+  hh: number, mm: number, tz: string,
+): Date {
+  const naive = Date.UTC(year, month - 1, day, hh, mm, 0);
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+  const p = Object.fromEntries(fmt.formatToParts(new Date(naive)).map(x => [x.type, x.value]));
+  const hour24 = p.hour === '24' ? 0 : Number(p.hour);
+  const tzAsUTC = Date.UTC(
+    Number(p.year), Number(p.month) - 1, Number(p.day),
+    hour24, Number(p.minute), 0,
+  );
+  return new Date(naive - (tzAsUTC - naive));
+}
+
+function nextFireTime(sync: SyncConfig, now: Date): Date | null {
+  if (sync.schedule === 'every15' || sync.schedule === 'hourly') {
+    const intervalMs = (sync.schedule === 'every15' ? 15 : 60) * 60_000;
+    return new Date(Math.ceil((now.getTime() + 1) / intervalMs) * intervalMs);
   }
+  if (sync.schedule !== 'daily' && sync.schedule !== 'weekly') return null;
+
+  const tz = sync.timezone ?? 'America/New_York';
+  const [hh, mm] = (sync.scheduleTime ?? '02:00').split(':').map(Number);
+  const dateFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const wdFmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' });
+
+  const tryOffset = (days: number): Date => {
+    const probe = new Date(now.getTime() + days * 86_400_000);
+    const d = Object.fromEntries(dateFmt.formatToParts(probe).map(x => [x.type, x.value]));
+    return zonedDateTimeToUTC(Number(d.year), Number(d.month), Number(d.day), hh, mm, tz);
+  };
+
+  if (sync.schedule === 'daily') {
+    const today = tryOffset(0);
+    return today > now ? today : tryOffset(1);
+  }
+
+  const targetDow = DAY_INDEX[sync.scheduleDay ?? 'Monday'] ?? 1;
+  for (let i = 0; i < 8; i++) {
+    const candidate = tryOffset(i);
+    if (candidate <= now) continue;
+    if (DAY_INDEX[wdFmt.format(candidate)] === targetDow) return candidate;
+  }
+  return null;
+}
+
+function formatRelative(target: Date, now: Date): string {
+  const totalMin = Math.max(0, Math.round((target.getTime() - now.getTime()) / 60_000));
+  if (totalMin < 60) return `in ${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 24) return `in ${h}h ${String(m).padStart(2, '0')}m`;
+  const d = Math.floor(h / 24);
+  return `in ${d}d ${h % 24}h`;
+}
+
+// Returns the banner copy for the saved schedule. Null = no banner (manual).
+// For interval-based cadences (every15, hourly) shows just the relative
+// countdown. For daily/weekly, shows the absolute next-fire time in the user's
+// browser timezone plus the relative countdown for at-a-glance context.
+function formatNextFire(sync: SyncConfig, now: Date): string | null {
+  if (sync.schedule === 'manual') return null;
+  const next = nextFireTime(sync, now);
+  if (!next) return null;
+  const rel = formatRelative(next, now);
+
+  if (sync.schedule === 'every15' || sync.schedule === 'hourly') {
+    return `next sync ${rel}`;
+  }
+  const abs = next.toLocaleString(undefined, {
+    weekday: sync.schedule === 'weekly' ? 'long' : undefined,
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  return `next sync at ${abs} (${rel})`;
 }
 
 type ScheduleForm = Pick<SyncConfig, 'schedule' | 'scheduleTime' | 'scheduleDay' | 'timezone'>;
@@ -284,6 +363,13 @@ export default function Schedule() {
 
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  // Tick once per 30s so the "in Xh Ym" countdown in the banner stays fresh
+  // without re-rendering the whole page constantly.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Called when the SSE stream emits `done` (success, partial, or failed).
   // Clears the in-progress state and refetches sync-runs + config so the
@@ -378,7 +464,7 @@ export default function Schedule() {
         </p>
       </div>
 
-      {sync && formatSchedule(sync) && (
+      {sync && formatNextFire(sync, now) && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 16px', marginBottom: 16,
@@ -388,7 +474,7 @@ export default function Schedule() {
           <CalendarClock size={18} style={{ color: 'var(--primary)', flexShrink: 0 }} />
           <div style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>
             <span style={{ fontWeight: 600 }}>Scheduled run set</span>
-            <span style={{ color: 'var(--muted-foreground)' }}> · next sync {formatSchedule(sync)}</span>
+            <span style={{ color: 'var(--muted-foreground)' }}> · {formatNextFire(sync, now)}</span>
           </div>
         </div>
       )}
