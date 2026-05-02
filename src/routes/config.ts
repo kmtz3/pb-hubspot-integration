@@ -39,33 +39,31 @@ router.patch('/', async (req, res) => {
   const body = req.body as Partial<AppConfig>;
   try {
     const currentSync = await getSyncConfig();
-    const promises: Promise<void>[] = [];
 
+    // Reconcile Cloud Scheduler BEFORE writing Firestore. If the scheduler call
+    // fails, we want the response to be 500 and the persisted schedule to stay
+    // unchanged — otherwise a follow-up save sees scheduleChanged === false and
+    // silently no-ops on the scheduler while returning 200.
     if (body.sync) {
-      promises.push(updateSyncConfig(body.sync));
-
-      // Detect schedule change and update Cloud Scheduler in production
       const scheduleChanged =
         body.sync.schedule !== currentSync.schedule ||
         body.sync.scheduleTime !== currentSync.scheduleTime ||
+        body.sync.scheduleDay !== currentSync.scheduleDay ||
         body.sync.timezone !== currentSync.timezone;
 
       if (scheduleChanged && process.env.NODE_ENV === 'production') {
-        promises.push(updateCloudScheduler(body.sync));
+        await reconcileCloudScheduler({ ...currentSync, ...body.sync });
       } else if (scheduleChanged) {
         console.log('would update Cloud Scheduler job (dev mode — skipped)');
       }
     }
 
-    if (body.fieldMappings?.mappings) {
-      promises.push(saveFieldMappings(body.fieldMappings.mappings));
-    }
+    const writes: Promise<void>[] = [];
+    if (body.sync) writes.push(updateSyncConfig(body.sync));
+    if (body.fieldMappings?.mappings) writes.push(saveFieldMappings(body.fieldMappings.mappings));
+    if (body.accountFilter) writes.push(saveAccountFilter(body.accountFilter));
+    await Promise.all(writes);
 
-    if (body.accountFilter) {
-      promises.push(saveAccountFilter(body.accountFilter));
-    }
-
-    await Promise.all(promises);
     res.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -73,24 +71,112 @@ router.patch('/', async (req, res) => {
   }
 });
 
-async function updateCloudScheduler(sync: Partial<SyncConfig>): Promise<void> {
+interface SchedulerEnv {
+  project: string;
+  region: string;
+  jobName: string;
+  parent: string;
+  appUrl: string;
+  schedulerSa: string;
+  audience: string;
+}
+
+function readSchedulerEnv(): SchedulerEnv {
+  // Trim every value: a stray space pasted into Cloud Run's env editor will
+  // otherwise propagate into resource names and OIDC token claims, where it
+  // produces silent auth/lookup failures rather than a clean error.
+  const project = process.env.GCP_PROJECT_ID?.trim();
+  const region = process.env.GCP_REGION?.trim();
+  const rawJob = process.env.GCS_JOB_NAME?.trim();
+  const appUrl = process.env.APP_URL?.trim();
+  const schedulerSa = process.env.SCHEDULER_SA_EMAIL?.trim();
+
+  const missing: string[] = [];
+  if (!project) missing.push('GCP_PROJECT_ID');
+  if (!region) missing.push('GCP_REGION');
+  if (!rawJob) missing.push('GCS_JOB_NAME');
+  if (!appUrl) missing.push('APP_URL');
+  if (!schedulerSa || schedulerSa === 'unused@example.com') missing.push('SCHEDULER_SA_EMAIL');
+  if (missing.length) {
+    throw new Error(`Cloud Scheduler not configured: missing ${missing.join(', ')}`);
+  }
+
+  // GCS_JOB_NAME may be a short id ("pb-hubspot-sync-scheduler") or a full
+  // resource path ("projects/.../locations/.../jobs/..."). Accept both.
+  const jobName = rawJob!.startsWith('projects/')
+    ? rawJob!
+    : `projects/${project}/locations/${region}/jobs/${rawJob}`;
+
+  return {
+    project: project!,
+    region: region!,
+    jobName,
+    parent: `projects/${project}/locations/${region}`,
+    appUrl: appUrl!,
+    schedulerSa: schedulerSa!,
+    audience: process.env.SCHEDULER_OIDC_AUDIENCE ?? appUrl!,
+  };
+}
+
+async function reconcileCloudScheduler(sync: SyncConfig): Promise<void> {
   const { CloudSchedulerClient } = await import('@google-cloud/scheduler');
   const client = new CloudSchedulerClient();
-  const jobName = process.env.GCS_JOB_NAME!;
-  const region = process.env.GCP_REGION ?? 'us-central1';
-  const project = process.env.GCP_PROJECT_ID!;
+  const env = readSchedulerEnv();
 
-  const cronExpr = buildCronExpression(sync);
-  const name = `projects/${project}/locations/${region}/jobs/${jobName}`;
+  // Manual mode: pause an existing job; never auto-create one.
+  if (sync.schedule === 'manual') {
+    try {
+      await client.pauseJob({ name: env.jobName });
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+    return;
+  }
 
-  await client.updateJob({
-    job: {
-      name,
-      schedule: cronExpr,
-      timeZone: sync.timezone ?? 'America/New_York',
-    },
-    updateMask: { paths: ['schedule', 'time_zone'] },
-  });
+  const schedule = buildCronExpression(sync);
+  const timeZone = sync.timezone ?? 'America/New_York';
+
+  try {
+    await client.updateJob({
+      job: { name: env.jobName, schedule, timeZone },
+      updateMask: { paths: ['schedule', 'time_zone'] },
+    });
+  } catch (err) {
+    if (!isNotFound(err)) throw err;
+    // Job doesn't exist yet — first save bootstraps it.
+    await client.createJob({
+      parent: env.parent,
+      job: {
+        name: env.jobName,
+        schedule,
+        timeZone,
+        httpTarget: {
+          uri: `${env.appUrl}/api/sync/run`,
+          httpMethod: 'POST',
+          body: Buffer.from(JSON.stringify({ trigger: 'scheduler' })),
+          headers: { 'Content-Type': 'application/json' },
+          oidcToken: {
+            serviceAccountEmail: env.schedulerSa,
+            audience: env.audience,
+          },
+        },
+      },
+    });
+    return;
+  }
+
+  // Job existed and was updated. If a previous manual-mode save paused it,
+  // resume so the new cron actually fires.
+  try {
+    await client.resumeJob({ name: env.jobName });
+  } catch (err) {
+    // FAILED_PRECONDITION on an already-enabled job is fine; ignore.
+    if (isNotFound(err)) throw err;
+  }
+}
+
+function isNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: number }).code === 5;
 }
 
 const DAY_OF_WEEK: Record<string, number> = {

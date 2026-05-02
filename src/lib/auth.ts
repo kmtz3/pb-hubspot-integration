@@ -25,7 +25,7 @@ const ALLOWED_EMAILS = process.env.GOOGLE_ALLOWED_EMAILS
 
 // Service account email of the Cloud Scheduler invoker. Tokens it signs are accepted
 // on /api/sync/run as an alternative to a session cookie.
-const SCHEDULER_SA_EMAIL = (process.env.SCHEDULER_SA_EMAIL ?? '').toLowerCase();
+const SCHEDULER_SA_EMAIL = (process.env.SCHEDULER_SA_EMAIL ?? '').trim().toLowerCase();
 
 // Only register the Google strategy when credentials are present.
 // In local dev without .env OAuth values, auth is bypassed entirely (see requireAuth below).

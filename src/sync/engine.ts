@@ -145,6 +145,34 @@ export async function runSync(options: {
     const requiredPBFieldIds = nonClearableFieldIds(pbFields);
     const pbFieldConstraintsById = fieldConstraintsById(pbFields);
 
+    // Heal stale `pbFieldType` against the live PB field metadata before it
+    // drives coercion, value pre-loading, or auto-provisioning. Pre-1.0.10 the
+    // MapFields tab could save mappings whose pbFieldType was overwritten from
+    // the HS source type — e.g. an HS single-select pointed at a PB text
+    // destination would land in Firestore as `pbFieldType: 'select'`. The 1.0.10
+    // commit healed this in the UI at load time, but the saved doc stays wrong
+    // until the user opens that tab and re-saves. Without this server-side
+    // heal, sync time:
+    //   - tries to pre-load /values for a non-select field (404)
+    //   - POSTs `{ name: '…' }` to a non-select field → 400 "is not a select-type field"
+    //   - emits `{ name: 'Foo' }` payloads PB rejects with 422 "Invalid format
+    //     for attribute '' in field with ID …"
+    // Heal in-memory only — don't write back to Firestore (the UI fix already
+    // does that the next time the user touches MapFields).
+    if (pbFields.length > 0) {
+      const pbFieldTypeById = new Map(pbFields.map(f => [f.id, f.type]));
+      for (const m of mappings) {
+        if (!m.pbFieldId) continue;
+        const liveType = pbFieldTypeById.get(m.pbFieldId);
+        if (liveType && liveType !== m.pbFieldType) {
+          console.warn(
+            `Healing stale pbFieldType for ${m.hubspotProperty} → ${m.pbFieldId}: saved='${m.pbFieldType}', live='${liveType}'`
+          );
+          m.pbFieldType = liveType;
+        }
+      }
+    }
+
     // Build the field values cache for select/multiselect mappings
     const valuesCache: PBFieldValuesCache = new Map();
     for (const mapping of mappings) {
