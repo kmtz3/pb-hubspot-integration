@@ -1,4 +1,4 @@
-import type { HubSpotCompany, HubSpotFilterGroup, HubSpotProperty, HubSpotSearchPayload } from '../types/hubspot';
+import type { HubSpotCompany, HubSpotFilter, HubSpotFilterGroup, HubSpotProperty, HubSpotSearchPayload } from '../types/hubspot';
 import { getSecret } from '../lib/secrets';
 import { getHubSpotConfig } from '../lib/firestore';
 import { withRetry, type ApiResponse } from './rateLimit';
@@ -47,17 +47,27 @@ export async function fetchCompanies(options: {
     lastSyncAt,
   } = options;
 
-  const effectiveFilterGroups: HubSpotFilterGroup[] = [...filterGroups];
-
-  if (lastSyncAt) {
-    effectiveFilterGroups.push({
-      filters: [{
+  // HubSpot CRM Search v3 semantics: filterGroups OR each other; filters
+  // within a group AND. To express `(account filter) AND (recently modified)`,
+  // the incremental constraint must be appended to *every* user group, not
+  // pushed as a new group (which would OR it onto the user's filter and pull
+  // in modified-but-out-of-scope records). With no user groups, fall back to
+  // the incremental constraint as the single group.
+  const incremental: HubSpotFilter | null = lastSyncAt
+    ? {
         propertyName: 'hs_lastmodifieddate',
         operator: 'GT',
         value: String(new Date(lastSyncAt).getTime()),
-      }],
-    });
-  }
+      }
+    : null;
+
+  const effectiveFilterGroups: HubSpotFilterGroup[] = (() => {
+    if (filterGroups.length === 0) {
+      return incremental ? [{ filters: [incremental] }] : [];
+    }
+    if (!incremental) return filterGroups;
+    return filterGroups.map(g => ({ filters: [...g.filters, incremental] }));
+  })();
 
   const companies: HubSpotCompany[] = [];
   let cursor: number | undefined;
