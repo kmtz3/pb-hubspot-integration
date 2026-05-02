@@ -110,7 +110,7 @@ export default function Shell({ activeTab, onTabChange, children }: ShellProps) 
           <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>→</span>
           <img src="/logos/pb-icon.svg" width={20} height={20} alt="Productboard" style={{ objectFit: 'contain' }} />
           <span style={{ fontWeight: 700, fontSize: 15, marginLeft: 4 }}>HubSpot Productboard Integration</span>
-          <span style={{ background: 'var(--muted)', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 500 }}>v1.0.0</span>
+          <span style={{ background: 'var(--muted)', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 500 }}>v{__APP_VERSION__}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <WorkspaceChips />
