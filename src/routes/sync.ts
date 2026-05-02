@@ -37,7 +37,26 @@ router.post('/run', async (req, res) => {
 
     await updateSyncConfig({ inProgress: true, inProgressStartedAt: new Date().toISOString() });
 
-    // Start sync in background
+    // Scheduler trigger: block until the sync completes. Cloud Run keeps the
+    // instance alive while a request is open, so awaiting here prevents the
+    // orphan-lock pattern we'd otherwise hit (response → instance scaled to
+    // zero → setImmediate work killed). Avoids needing min-instances=1 +
+    // always-on CPU. The scheduler attempt deadline must be ≥ expected sync
+    // duration; Cloud Run's 3600s request timeout is the upper bound.
+    if (trigger === 'scheduler') {
+      try {
+        await runSync({ trigger, runId });
+        return res.json({ runId, completed: true });
+      } catch (err) {
+        console.error(`Scheduler sync ${runId} failed:`, err);
+        return res.status(500).json({ runId, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    // UI trigger: kick off in setImmediate and return runId so the client can
+    // subscribe to /stream for live progress. The active SSE connection from
+    // the browser keeps the instance alive for the full sync duration. If the
+    // user closes the tab mid-sync, the stale-lock fallback above recovers.
     const emitter: SseEmitter = (event) => {
       const fn = sseEmitters.get(runId);
       if (fn) fn(event);
