@@ -286,14 +286,25 @@ export default function MapFields() {
   // refetch (e.g. post-save invalidation) — the form already matches what was
   // just saved, and re-running reset() during a successful-save render
   // destabilizes the "Mappings saved." alert.
+  // Pre-1.0.10 configs may have a stale pbFieldType (set from the HS source
+  // when an HS dropdown was last touched) that disagrees with the actual PB
+  // field's type. Heal those at load time so the badge logic and any
+  // pbFieldType-driven sync paths use the destination's real type. Wait until
+  // pbFields has loaded so the lookup can succeed.
   const initializedRef = useRef(false);
   useEffect(() => {
     if (initializedRef.current) return;
-    if (config?.fieldMappings.mappings) {
-      reset({ mappings: config.fieldMappings.mappings });
-      initializedRef.current = true;
-    }
-  }, [config, reset]);
+    if (!config?.fieldMappings.mappings) return;
+    if (!pbFields) return;
+    const healed = config.fieldMappings.mappings.map((m: any) => {
+      if (!m.pbFieldId) return m;
+      const pbField = pbFields.find((f: any) => f.id === m.pbFieldId);
+      if (!pbField || pbField.type === m.pbFieldType) return m;
+      return { ...m, pbFieldType: pbField.type };
+    });
+    reset({ mappings: healed });
+    initializedRef.current = true;
+  }, [config, pbFields, reset]);
 
   // Auto-dismiss the saved/failed indicator after a moment so it
   // doesn't linger and imply that subsequent unsaved edits are persisted.
@@ -459,8 +470,18 @@ export default function MapFields() {
                       value={f.value ?? ''}
                       onChange={(next) => {
                         f.onChange(next);
-                        const hsProp = hsProps.find((p: any) => p.name === next);
-                        setValue(`mappings.${idx}.pbFieldType`, hsProp ? hsTypeToPBFieldType(hsProp) : null);
+                        // Only seed pbFieldType from the HS source when no PB
+                        // destination is chosen yet (placeholder value). Once
+                        // PB is set, its type is the source of truth — see the
+                        // inverse onChange below. Without this guard, picking
+                        // an HS single-select after the user already chose a
+                        // PB text destination would overwrite pbFieldType to
+                        // 'select' and trigger the "Auto-provisions values"
+                        // badge plus mis-keyed sync-time coercion.
+                        if (!mapping.pbFieldId) {
+                          const hsProp = hsProps.find((p: any) => p.name === next);
+                          setValue(`mappings.${idx}.pbFieldType`, hsProp ? hsTypeToPBFieldType(hsProp) : null);
+                        }
                       }}
                       groups={hsGroups}
                       getKey={(p: any) => p.name}

@@ -237,6 +237,18 @@ export function buildFieldsPayload(
     let rawValue: unknown = hsCompany.properties[mapping.hubspotProperty];
     if (rawValue === undefined) continue;
 
+    // HubSpot returns unset properties as `""` (not undefined) — collapse those
+    // to null up-front so the field becomes a `clear` op via
+    // buildPatchOperations rather than feeding malformed values into coercion
+    // (e.g. select would produce `{ name: "" }` and PB rejects with
+    // "Invalid format for attribute '' in field with ID …"). Mirrors
+    // PBToolkit's `isEmpty = rawVal === '' || rawVal == null` check
+    // in companies.js:651.
+    if (rawValue === null || (typeof rawValue === 'string' && rawValue.trim() === '')) {
+      setValue(mapping.pbFieldId, null);
+      continue;
+    }
+
     // If the HS source is an owner/user-id field and the destination wants
     // email content (member, multimember, or text — for comma-delimited
     // listings), resolve the ids → emails up-front so the existing coerce
