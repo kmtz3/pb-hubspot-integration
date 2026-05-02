@@ -93,6 +93,7 @@ function nextFireTime(sync: SyncConfig, now: Date): Date | null {
 
 function formatRelative(target: Date, now: Date): string {
   const totalMin = Math.max(0, Math.round((target.getTime() - now.getTime()) / 60_000));
+  if (totalMin === 0) return 'now';
   if (totalMin < 60) return `in ${totalMin}m`;
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
@@ -120,7 +121,9 @@ function formatNextFire(sync: SyncConfig, now: Date): string | null {
     hour: '2-digit', minute: '2-digit',
     timeZoneName: 'short',
   });
-  return `next sync at ${abs} (${rel})`;
+  // Drop the parenthetical when fire-time is right now — "(now)" reads
+  // awkwardly tacked onto an absolute timestamp.
+  return rel === 'now' ? `next sync now` : `next sync at ${abs} (${rel})`;
 }
 
 type ScheduleForm = Pick<SyncConfig, 'schedule' | 'scheduleTime' | 'scheduleDay' | 'timezone'>;
@@ -281,10 +284,11 @@ function LastSyncCard({ run, isSyncing, onSyncNow, syncPending }: {
   run?: SyncRun; isSyncing: boolean; onSyncNow: () => void; syncPending: boolean;
 }) {
   const palette = run ? {
-    success: { color: 'var(--success)',     icon: CheckCircle,   label: 'Success' },
-    partial: { color: 'var(--warning)',     icon: AlertCircle,   label: 'Partial — completed with errors' },
-    failed:  { color: 'var(--destructive)', icon: XCircle,       label: 'Failed' },
-    running: { color: 'var(--primary)',     icon: Loader2,       label: 'Running' },
+    success: { color: 'var(--success)',           icon: CheckCircle,   label: 'Success' },
+    partial: { color: 'var(--warning)',           icon: AlertCircle,   label: 'Partial — completed with errors' },
+    failed:  { color: 'var(--destructive)',       icon: XCircle,       label: 'Failed' },
+    running: { color: 'var(--primary)',           icon: Loader2,       label: 'Running' },
+    skipped: { color: 'var(--muted-foreground)',  icon: AlertCircle,   label: run.skipReason ?? 'Skipped' },
   }[run.status] : null;
 
   const started = run ? new Date(run.startedAt).toLocaleString() : null;

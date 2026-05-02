@@ -68,10 +68,14 @@ export interface SyncRun {
   errors: SyncRunError[];
   debugLogs?: SyncDebugLog[];
   resolvedViaFallback?: number;
+  // Set when status === 'skipped'. Surfaces *why* the run was a no-op (e.g.
+  // missing token) so the History tab can render context instead of leaving
+  // the user wondering why nothing happened.
+  skipReason?: string;
 }
 
 export type SyncTrigger = 'ui' | 'scheduler';
-export type SyncStatus = 'success' | 'partial' | 'failed' | 'running';
+export type SyncStatus = 'success' | 'partial' | 'failed' | 'running' | 'skipped';
 
 export type SseEmitter = (event: SyncEvent) => void;
 

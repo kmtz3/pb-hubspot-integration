@@ -12,6 +12,7 @@ function StatusBadge({ status }: { status: SyncRun['status'] }) {
     partial: { bg: 'var(--warning-accent)',     color: 'var(--warning-accent-foreground)', label: 'Partial' },
     failed:  { bg: 'var(--destructive-accent)', color: 'var(--destructive-accent-foreground)', label: 'Failed' },
     running: { bg: 'var(--accent)',             color: 'var(--accent-foreground)',         label: 'Running' },
+    skipped: { bg: 'var(--muted)',              color: 'var(--muted-foreground)',          label: 'Skipped' },
   };
   const { bg, color, label } = map[status];
   return (
@@ -160,6 +161,11 @@ function RunRow({ run }: { run: SyncRun }) {
                 API calls: <span style={{ fontFamily: 'var(--font-mono)' }}>{run.stats.fetched + run.stats.created + run.stats.updated}</span>
               </div>
             </div>
+            {run.skipReason && (
+              <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 8 }}>
+                <span style={{ fontWeight: 600 }}>Reason:</span> {run.skipReason}
+              </div>
+            )}
             {run.errors.length > 0 && <ErrorTable errors={run.errors} />}
             {run.debugLogs && run.debugLogs.length > 0 && <DebugLogTable logs={run.debugLogs} />}
           </td>
@@ -261,6 +267,7 @@ export default function History() {
               <option value="success">Success</option>
               <option value="partial">Partial</option>
               <option value="failed">Failed</option>
+              <option value="skipped">Skipped</option>
             </select>
             <ChevronRight size={12} style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%) rotate(90deg)', color: 'var(--muted-foreground)', pointerEvents: 'none' }} />
           </div>

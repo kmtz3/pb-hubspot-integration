@@ -4,6 +4,8 @@ import {
   getSyncConfig,
   getFieldMappings,
   getAccountFilter,
+  getHubSpotConfig,
+  getPBConfig,
   updateSyncConfig,
   writeSyncHistory,
 } from '../lib/firestore';
@@ -14,6 +16,23 @@ import { buildFieldsPayload, buildPatchOperations, detectOwnerIdField, stripNull
 import type { FieldMapping } from '../types/sync';
 import type { PBField, PBFieldValue } from '../types/productboard';
 import { ApiError } from './rateLimit';
+
+// Returns a human-readable skipReason if either connection is missing, or
+// null if both sides are configured. Token presence is detected via either
+// (a) the Firestore connection record's `connected` flag (the Connect tab
+// flips this on save and clears it on disconnect) or (b) an env-var override
+// (HUBSPOT_API_KEY / PB_API_KEY) — matching the lookup order in the token
+// getters so the skip check never disagrees with the actual fetch path.
+async function checkConnectionsForSkip(): Promise<string | null> {
+  const [hs, pb] = await Promise.all([getHubSpotConfig(), getPBConfig()]);
+  const hsOk = !!process.env.HUBSPOT_API_KEY || hs.connected;
+  const pbOk = !!process.env.PB_API_KEY || pb.connected;
+  if (hsOk && pbOk) return null;
+  const missing: string[] = [];
+  if (!hsOk) missing.push('HubSpot');
+  if (!pbOk) missing.push('Productboard');
+  return `${missing.join(' + ')} not connected — reconnect in the Connect tab to resume`;
+}
 
 function nonClearableFieldIds(fields: PBField[]): Set<string> {
   return new Set(
@@ -131,6 +150,28 @@ export async function runSync(options: {
   const errors: Array<{ hsId: string | null; name: string; detail: string }> = [];
   const debugLogs: SyncDebugLog[] = [];
   let resolvedViaFallback = 0;
+
+  // Fail clean when a connection is missing: emit a skipped run rather than
+  // letting the first PB/HS API call throw. Keeps History readable and the
+  // scheduler dashboard green when tokens are temporarily disconnected — the
+  // run self-heals on reconnect because the next scheduler tick re-checks.
+  const skip = await checkConnectionsForSkip();
+  if (skip) {
+    const finishedAt = new Date().toISOString();
+    sseEmitter?.({ type: 'done', status: 'skipped', stats, durationMs: 0 });
+    await writeSyncHistory({
+      startedAt, finishedAt, trigger, status: 'skipped',
+      stats, errors: [], skipReason: skip,
+    });
+    await updateSyncConfig({
+      lastSyncAt: finishedAt,
+      lastSyncStatus: 'skipped',
+      lastSyncStats: stats,
+      inProgress: false,
+    });
+    activeRuns.delete(runId);
+    return stats;
+  }
 
   try {
     const [syncConfig, mappings, accountFilter] = await Promise.all([
