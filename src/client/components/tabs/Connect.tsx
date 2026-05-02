@@ -272,7 +272,7 @@ export default function Connect() {
         <div style={{ fontWeight: 600, marginBottom: 12 }}>Deployment</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {[
-            { label: 'GCP Project', value: import.meta.env.VITE_GCP_PROJECT_ID ?? '—' },
+            { label: 'GCP Project', value: import.meta.env.VITE_GCP_PROJECT_ID || '—' },
             { label: 'Service', value: 'Cloud Run' },
             { label: 'Storage', value: 'Firestore' },
             { label: 'Access', value: 'Cloud Run IAM' },
