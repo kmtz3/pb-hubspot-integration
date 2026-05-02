@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HubSpot Productboard Integration — Documentation</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f8f9fa;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      --max-w: 780px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    /* Layout */
+    .layout { display: flex; min-height: 100vh; }
+
+    aside {
+      width: 240px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 32px 20px;
+      background: var(--surface);
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 28px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .sidebar-logo .arrow { color: var(--muted); font-size: 11px; }
+
+    .nav-section { margin-bottom: 20px; }
+
+    .nav-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .nav-link {
+      display: block;
+      padding: 4px 8px;
+      border-radius: 5px;
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    .nav-link:hover { background: var(--border); color: var(--text); }
+    .nav-link.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+
+    main {
+      flex: 1;
+      max-width: var(--max-w);
+      padding: 56px 48px 120px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 700px) {
+      aside { display: none; }
+      main { padding: 32px 20px 80px; }
+    }
+
+    /* Typography */
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+    h2 { font-size: 20px; font-weight: 700; margin-top: 56px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); scroll-margin-top: 24px; }
+    h3 { font-size: 15px; font-weight: 700; margin-top: 28px; margin-bottom: 10px; scroll-margin-top: 24px; }
+    h4 { font-size: 13px; font-weight: 700; margin-top: 20px; margin-bottom: 6px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .lead {
+      font-size: 16px;
+      color: var(--muted);
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+
+    /* Callouts */
+    .callout {
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 20px 0;
+      font-size: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .callout-icon { flex-shrink: 0; margin-top: 1px; }
+    .callout-body { flex: 1; }
+    .callout-body strong { display: block; margin-bottom: 3px; }
+
+    .callout.info { background: var(--accent-light); border-left: 3px solid var(--accent); }
+    .callout.info .callout-icon { color: var(--accent); }
+    .callout.warning { background: var(--warning-light); border-left: 3px solid var(--warning); }
+    .callout.warning .callout-icon { color: var(--warning); }
+    .callout.success { background: var(--success-light); border-left: 3px solid var(--success); }
+    .callout.success .callout-icon { color: var(--success); }
+    .callout.danger { background: var(--danger-light); border-left: 3px solid var(--danger); }
+    .callout.danger .callout-icon { color: var(--danger); }
+
+    /* Steps */
+    .steps { counter-reset: step; margin: 24px 0; }
+
+    .step {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      counter-increment: step;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-body { flex: 1; }
+    .step-body strong { display: block; margin-bottom: 4px; font-size: 15px; }
+
+    /* Code */
+    code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    pre {
+      background: #1e2433;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 16px 0;
+    }
+
+    pre code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+    th { text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 8px 12px; border-bottom: 2px solid var(--border); }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--surface); }
+
+    /* Field pill */
+    .pill {
+      display: inline-block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    /* Hero breadcrumb */
+    .breadcrumb { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+
+    /* TOC / header helpers */
+    .updated-badge {
+      display: inline-block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 8px;
+      vertical-align: middle;
+      font-weight: 400;
+    }
+
+    /* Divider */
+    hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+    /* Tag */
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      padding: 1px 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .tag.green { background: var(--success-light); color: var(--success); }
+    .tag.yellow { background: var(--warning-light); color: var(--warning); }
+    .tag.blue { background: var(--accent-light); color: var(--accent); }
+    .tag.red { background: var(--danger-light); color: var(--danger); }
+
+    /* Inline icon */
+    svg.inline { vertical-align: -3px; display: inline; }
+
+    /* Flow diagram */
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin: 24px 0;
+      flex-wrap: wrap;
+      gap: 0;
+    }
+
+    .flow-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      min-width: 110px;
+    }
+
+    .flow-arrow {
+      color: var(--muted);
+      font-size: 18px;
+      padding: 0 10px;
+      flex-shrink: 0;
+    }
+
+    /* Vertical steps inside a flow */
+    .sub-steps { margin: 8px 0 0 16px; }
+    .sub-steps li { margin-bottom: 4px; font-size: 14px; }
+    ul.sub-steps, ol.sub-steps { padding-left: 18px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside>
+    <a class="sidebar-logo" href="/">
+      <span>HubSpot</span>
+      <span class="arrow">→</span>
+      <span>Productboard</span>
+    </a>
+
+    <div class="nav-section">
+      <div class="nav-label">Getting started</div>
+      <a class="nav-link" href="#overview">Overview</a>
+      <a class="nav-link" href="#prerequisites">Prerequisites</a>
+      <a class="nav-link" href="#setup">Setup walkthrough</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Configuration</div>
+      <a class="nav-link" href="#connect">Connect accounts</a>
+      <a class="nav-link" href="#filter">Filter accounts</a>
+      <a class="nav-link" href="#map-fields">Map fields</a>
+      <a class="nav-link" href="#schedule">Schedule syncs</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Reference</div>
+      <a class="nav-link" href="#history">Sync history</a>
+      <a class="nav-link" href="#rate-limits">Rate limits</a>
+      <a class="nav-link" href="#field-reference">Field reference</a>
+      <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+      <a class="nav-link" href="#faq">FAQ</a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main>
+    <div class="breadcrumb">HubSpot Productboard Integration · Documentation</div>
+    <h1>HubSpot Productboard Integration <span class="updated-badge">v1.0</span></h1>
+    <p class="lead">
+      Keep your Productboard account data in sync with HubSpot — automatically surface customer segments, deal values, and account details without leaving your product tool.
+    </p>
+
+    <!-- ───────────────────────────────────── OVERVIEW ── -->
+    <h2 id="overview">Overview</h2>
+
+    <p>
+      This integration pulls company data from HubSpot and pushes it into Productboard so your product teams always have accurate customer context when triaging feedback and planning roadmaps.
+    </p>
+
+    <div class="flow">
+      <div class="flow-box">HubSpot<br><span style="font-weight:400;color:var(--muted);font-size:12px">Companies</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Sync engine<br><span style="font-weight:400;color:var(--muted);font-size:12px">Filter · Map · Dedup</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">Productboard<br><span style="font-weight:400;color:var(--muted);font-size:12px">Companies</span></div>
+    </div>
+
+    <h3>What gets synced</h3>
+    <table>
+      <thead><tr><th>HubSpot object</th><th>Productboard object</th><th>Direction</th></tr></thead>
+      <tbody>
+        <tr><td>Company</td><td>Company</td><td>HubSpot → Productboard</td></tr>
+        <tr><td>Company properties</td><td>Custom fields</td><td>HubSpot → Productboard (configurable)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">
+        <strong>One-way sync</strong>
+        Data flows from HubSpot into Productboard only. Changes made to companies inside Productboard are not written back to HubSpot.
+      </div>
+    </div>
+
+    <h3>Key behaviours</h3>
+    <ul class="sub-steps">
+      <li><strong>Idempotent:</strong> Running the same sync twice never creates duplicates. The engine matches on HubSpot company ID.</li>
+      <li><strong>Incremental:</strong> Only records that have changed since the last successful sync are re-processed by default.</li>
+      <li><strong>Dry-run safe:</strong> Set <code>DRY_RUN=true</code> in the environment to preview all writes without touching any API.</li>
+      <li><strong>Rate-limit aware:</strong> A token-bucket limiter automatically throttles requests to stay inside Productboard (300 req/min) and HubSpot (100 req/10 s) limits.</li>
+    </ul>
+
+    <!-- ────────────────────────────── PREREQUISITES ── -->
+    <h2 id="prerequisites">Prerequisites</h2>
+
+    <table>
+      <thead><tr><th>Requirement</th><th>Details</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Productboard API key</strong></td>
+          <td>A Productboard account with API access enabled. Generate a key at <em>Settings → API &amp; integrations → API keys</em>. Requires Admin role.</td>
+        </tr>
+        <tr>
+          <td><strong>HubSpot service key token</strong></td>
+          <td>
+            A HubSpot Service Key (account-owned, not tied to an individual user). Required scopes: <code>crm.objects.companies.read</code>, <code>crm.schemas.companies.read</code>, <code>crm.objects.owners.read</code> (the last one resolves owner IDs to emails for Productboard member field mappings). Create at <em>Development → Keys → Service Keys</em>. Requires Super Admin or Developer tools permission. The Connect tab probes all three scopes on save and on every <em>Test connection</em> run, and warns in the UI if any are missing.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Google Workspace account</strong></td>
+          <td>Sign-in is restricted to your organisation's Google Workspace domain. You'll be prompted to authenticate when you first open the app.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body">
+        <strong>Keep your API keys private</strong>
+        Never share your Productboard or HubSpot tokens in Slack, email, or screenshots. Treat them like passwords — rotate immediately if exposed.
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────── SETUP ── -->
+    <h2 id="setup">Setup walkthrough</h2>
+    <p>Getting from zero to your first sync takes about five minutes.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Sign in</strong>
+          Open the app and click <em>Sign in with Google</em>. Use your company Google Workspace account — personal Gmail addresses are not permitted.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Connect Productboard</strong>
+          Go to the <em>Connect</em> tab. Paste your Productboard API key and click <em>Verify</em>. The app will confirm your workspace name.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Connect HubSpot</strong>
+          Still on the <em>Connect</em> tab, paste your HubSpot service key token and click <em>Verify</em>. The portal ID and account name will appear when the token is valid.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Filter which accounts to sync (optional)</strong>
+          Open <em>Filter accounts</em> to narrow down which HubSpot companies are included. You can filter by property value, lifecycle stage, owner, or any HubSpot company property. Skip this step to sync all companies.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Map fields</strong>
+          Open <em>Map fields</em> to choose which HubSpot company properties map to which Productboard company fields. At minimum, map <em>Company name</em>. Unmapped properties are ignored.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <strong>Schedule or run manually</strong>
+          Open <em>Schedule</em> to set up automatic syncs (daily, hourly, etc.), or click <em>Sync now</em> on the same tab for a one-time run. Watch live progress in the status panel.
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────── CONNECT ── -->
+    <h2 id="connect">Connect accounts</h2>
+
+    <h3>Productboard API key</h3>
+    <p>To generate a Productboard API key:</p>
+    <ol class="sub-steps">
+      <li>In Productboard, go to <em>Settings → API &amp; integrations → API keys</em>.</li>
+      <li>Click <em>Generate new key</em>. Give it a descriptive name like <code>HubSpot sync</code>.</li>
+      <li>Copy the key immediately — it is shown only once.</li>
+    </ol>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">
+        The Productboard API key is scoped to the user who generated it. If that user is deactivated, the key stops working. Use a service account if your organisation has one.
+      </div>
+    </div>
+
+    <h3>HubSpot service key token</h3>
+    <p>To create a HubSpot service key (requires Super Admin or Developer tools permission):</p>
+    <ol class="sub-steps">
+      <li>In HubSpot, go to <em>Development → Keys → Service Keys</em> and click <em>Create service key</em>.</li>
+      <li>Name it (e.g., <code>pb-hubspot-sync</code>).</li>
+      <li>Click <em>Add new scope</em> and enable all three: <code>crm.objects.companies.read</code>, <code>crm.schemas.companies.read</code>, and <code>crm.objects.owners.read</code> (the last one is needed to resolve HubSpot owner IDs to emails when mapping to Productboard member fields).</li>
+      <li>Click <em>Create</em> and confirm, then copy the generated token.</li>
+    </ol>
+
+    <!-- ──────────────────────────────── FILTER ACCOUNTS ── -->
+    <h2 id="filter">Filter accounts</h2>
+    <p>
+      By default the sync processes every company in your HubSpot portal. Use filters to limit scope — useful for large portals or when you only want to sync a specific customer segment (e.g., only Enterprise accounts with an active deal).
+    </p>
+
+    <h3>Filter types</h3>
+    <table>
+      <thead><tr><th>Filter type</th><th>Example use</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Property equals</strong></td><td>Lifecycle stage = <code>customer</code></td></tr>
+        <tr><td><strong>Property contains</strong></td><td>Industry contains <code>Software</code></td></tr>
+        <tr><td><strong>Property is known / unknown</strong></td><td>Annual revenue is known</td></tr>
+        <tr><td><strong>Property greater / less than</strong></td><td>Number of employees &gt; 50</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      Multiple filters are combined with <strong>AND</strong> — a company must match all active filters to be included.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">
+        <strong>Preview before syncing</strong>
+        After setting filters, click <em>Preview</em> to see a count of matching companies before committing to a full sync.
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────── MAP FIELDS ── -->
+    <h2 id="map-fields">Map fields</h2>
+    <p>
+      Field mapping controls which HubSpot company properties are written into which Productboard fields. Any HubSpot property that exists in your portal can be mapped.
+    </p>
+
+    <h3>Built-in mappings</h3>
+    <table>
+      <thead><tr><th>HubSpot property</th><th>Productboard field</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill">name</span></td><td>Company name</td><td>Required. Used as the display name in Productboard.</td></tr>
+        <tr><td><span class="pill">domain</span></td><td>Domain</td><td>Also used for deduplication matching.</td></tr>
+        <tr><td><span class="pill">hs_object_id</span></td><td>External ID</td><td>Always synced automatically — do not remove.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Custom field mappings</h3>
+    <p>
+      Any HubSpot company property can be mapped to a Productboard custom field. The <em>Map fields</em> tab shows all available HubSpot properties on the left and all configured Productboard custom fields on the right. Drag a line between them (or use the dropdowns) to create a mapping.
+    </p>
+
+    <h4>Supported field types</h4>
+    <table>
+      <thead><tr><th>HubSpot type</th><th>Productboard type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Single-line text</td><td>Text</td><td></td></tr>
+        <tr><td>Number</td><td>Number</td><td>Decimal precision is preserved.</td></tr>
+        <tr><td>Dropdown / Enumeration</td><td>Dropdown</td><td>Option labels are mapped by value, not internal key.</td></tr>
+        <tr><td>Date</td><td>Date</td><td>Converted to ISO 8601.</td></tr>
+        <tr><td>Checkbox (boolean)</td><td>Text (<code>true</code>/<code>false</code>)</td><td>Productboard has no native boolean field type.</td></tr>
+        <tr><td>Multi-select</td><td>Text (comma-separated)</td><td></td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body">
+        <strong>Custom fields must exist first</strong>
+        Create any custom fields in Productboard (<em>Settings → Custom fields</em>) before mapping. The sync engine will not create them automatically.
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────── SCHEDULE ── -->
+    <h2 id="schedule">Schedule syncs</h2>
+    <p>
+      Scheduled syncs run automatically in the background using Google Cloud Scheduler. You do not need to keep the browser open.
+    </p>
+
+    <h3>Available schedules</h3>
+    <table>
+      <thead><tr><th>Preset</th><th>Cron expression</th><th>Recommended for</th></tr></thead>
+      <tbody>
+        <tr><td>Every hour</td><td><code>0 * * * *</code></td><td>High-velocity sales motion; frequent deal updates</td></tr>
+        <tr><td>Every 6 hours</td><td><code>0 */6 * * *</code></td><td>Most teams — good balance of freshness and rate-limit headroom</td></tr>
+        <tr><td>Daily at midnight</td><td><code>0 0 * * *</code></td><td>Low-volume portals or teams that only need daily snapshots</td></tr>
+        <tr><td>Custom</td><td>Any valid cron</td><td>Special requirements</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">
+        Scheduled syncs run in UTC. If you set "Daily at midnight", that's 00:00 UTC — adjust for your timezone.
+      </div>
+    </div>
+
+    <h3>Manual sync</h3>
+    <p>
+      To run a one-off sync at any time, go to the <em>Schedule</em> tab and click <em>Sync now</em>. A live progress feed shows created, updated, and error counts per batch.
+    </p>
+
+    <!-- ──────────────────────────────── HISTORY ── -->
+    <h2 id="history">Sync history</h2>
+    <p>
+      The <em>History</em> tab shows a log of every sync run, including start time, duration, outcome, and record-level stats.
+    </p>
+
+    <table>
+      <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag green">Success</span></td><td>All records processed without errors.</td></tr>
+        <tr><td><span class="tag yellow">Partial</span></td><td>Some records failed — others were written. Expand the row to see which.</td></tr>
+        <tr><td><span class="tag red">Failed</span></td><td>The sync aborted before completing. Usually an auth or network issue.</td></tr>
+        <tr><td><strong>Created</strong></td><td>Net-new companies added to Productboard.</td></tr>
+        <tr><td><strong>Updated</strong></td><td>Existing companies with one or more field changes applied.</td></tr>
+        <tr><td><strong>Skipped</strong></td><td>Companies where nothing changed since the last sync — no write issued.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Use the <em>Download CSV</em> button to export the full history log for auditing.</p>
+
+    <!-- ──────────────────────────────── RATE LIMITS ── -->
+    <h2 id="rate-limits">Rate limits</h2>
+
+    <table>
+      <thead><tr><th>API</th><th>Limit</th><th>How we handle it</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Productboard</td>
+          <td>300 requests / minute</td>
+          <td>Token-bucket limiter — requests queue automatically when approaching the ceiling.</td>
+        </tr>
+        <tr>
+          <td>HubSpot (free)</td>
+          <td>100 requests / 10 s</td>
+          <td>Same token-bucket, tuned to the free tier limit. Set your tier in <em>Settings</em>.</td>
+        </tr>
+        <tr>
+          <td>HubSpot (paid)</td>
+          <td>150 requests / 10 s</td>
+          <td>Configure your HubSpot tier in <em>Settings → Advanced</em> to use the higher limit.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      If a sync run errors with <code>429 Too Many Requests</code>, the engine backs off with exponential backoff and retries automatically. You should not need to intervene.
+    </p>
+
+    <!-- ──────────────────────────────── FIELD REFERENCE ── -->
+    <h2 id="field-reference">Field reference</h2>
+    <p>
+      The table below lists every HubSpot company property that is available for mapping, along with its internal key and value type.
+    </p>
+
+    <table>
+      <thead><tr><th>Display name</th><th>HubSpot key</th><th>Type</th></tr></thead>
+      <tbody>
+        <tr><td>Company name</td><td><span class="pill">name</span></td><td>Text</td></tr>
+        <tr><td>Domain</td><td><span class="pill">domain</span></td><td>Text</td></tr>
+        <tr><td>HubSpot ID</td><td><span class="pill">hs_object_id</span></td><td>Number</td></tr>
+        <tr><td>Annual revenue</td><td><span class="pill">annualrevenue</span></td><td>Number</td></tr>
+        <tr><td>Number of employees</td><td><span class="pill">numberofemployees</span></td><td>Number</td></tr>
+        <tr><td>Industry</td><td><span class="pill">industry</span></td><td>Enumeration</td></tr>
+        <tr><td>Lifecycle stage</td><td><span class="pill">lifecyclestage</span></td><td>Enumeration</td></tr>
+        <tr><td>City</td><td><span class="pill">city</span></td><td>Text</td></tr>
+        <tr><td>Country</td><td><span class="pill">country</span></td><td>Text</td></tr>
+        <tr><td>Phone</td><td><span class="pill">phone</span></td><td>Text</td></tr>
+        <tr><td>Owner</td><td><span class="pill">hubspot_owner_id</span></td><td>Owner (resolved to name)</td></tr>
+        <tr><td>Create date</td><td><span class="pill">createdate</span></td><td>Date</td></tr>
+        <tr><td>Last modified date</td><td><span class="pill">hs_lastmodifieddate</span></td><td>Date</td></tr>
+        <tr><td>Description</td><td><span class="pill">description</span></td><td>Text</td></tr>
+        <tr><td>Website</td><td><span class="pill">website</span></td><td>Text</td></tr>
+        <tr><td>LinkedIn URL</td><td><span class="pill">linkedin_company_page</span></td><td>Text</td></tr>
+        <tr><td>Type</td><td><span class="pill">type</span></td><td>Enumeration</td></tr>
+      </tbody>
+    </table>
+
+    <p>Any custom company properties you've created in HubSpot will also appear in the <em>Map fields</em> dropdowns.</p>
+
+    <!-- ──────────────────────────────── TROUBLESHOOTING ── -->
+    <h2 id="troubleshooting">Troubleshooting</h2>
+
+    <h3>Authentication errors</h3>
+    <table>
+      <thead><tr><th>Error</th><th>Likely cause</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>401 Unauthorized</code> (Productboard)</td>
+          <td>API key is invalid or was rotated.</td>
+          <td>Re-paste your Productboard API key in the <em>Connect</em> tab and click <em>Verify</em>.</td>
+        </tr>
+        <tr>
+          <td><code>401 Unauthorized</code> (HubSpot)</td>
+          <td>Service key token rotated, deleted, or scopes changed.</td>
+          <td>Generate a new service key in HubSpot under <em>Development → Keys → Service Keys</em> and re-enter it in the <em>Connect</em> tab.</td>
+        </tr>
+        <tr>
+          <td>Sign-in blocked</td>
+          <td>Your Google account is not on the allowed domain.</td>
+          <td>Use your <code>@yourcompany.com</code> Google Workspace account.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Sync errors</h3>
+    <table>
+      <thead><tr><th>Error</th><th>Likely cause</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Company not appearing in Productboard</td>
+          <td>Company was filtered out, or the sync hasn't run yet.</td>
+          <td>Check your filter rules in <em>Filter accounts</em>. Run a manual sync from <em>Schedule</em>.</td>
+        </tr>
+        <tr>
+          <td>Custom field value not syncing</td>
+          <td>Field not mapped, or the Productboard custom field doesn't exist.</td>
+          <td>Verify the mapping in <em>Map fields</em>. Confirm the custom field exists in Productboard settings.</td>
+        </tr>
+        <tr>
+          <td><code>429 Too Many Requests</code></td>
+          <td>Rate limit hit — usually only on very large portals.</td>
+          <td>The engine retries automatically. If it persists, reduce <code>SYNC_CONCURRENCY</code> in <em>Settings → Advanced</em>.</td>
+        </tr>
+        <tr>
+          <td>Partial sync — some records failed</td>
+          <td>Individual company records contain unexpected field values.</td>
+          <td>Download the history CSV from the <em>History</em> tab and review the <code>error</code> column for specific record IDs.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Scheduled sync not running</h3>
+    <ol class="sub-steps">
+      <li>Confirm the schedule is active in the <em>Schedule</em> tab (the toggle should be on).</li>
+      <li>Check the <em>History</em> tab for the expected run time — Cloud Scheduler may have a few minutes of jitter.</li>
+      <li>If no entry appears after 15 minutes past the scheduled time, check the Cloud Scheduler console in GCP for error logs.</li>
+    </ol>
+
+    <!-- ──────────────────────────────── FAQ ── -->
+    <h2 id="faq">FAQ</h2>
+
+    <h3>Can I sync data the other way — from Productboard back to HubSpot?</h3>
+    <p>
+      Not currently. The integration is HubSpot → Productboard only. Reverse sync (e.g., writing Productboard feature votes back to HubSpot deals) is on the roadmap.
+    </p>
+
+    <h3>Will the sync overwrite data I've manually entered in Productboard?</h3>
+    <p>
+      Yes, for any field that has an active mapping. If you map HubSpot's <em>Industry</em> to a Productboard custom field, any manual edits to that field in Productboard will be overwritten on the next sync. Only map fields where HubSpot is the system of record.
+    </p>
+
+    <h3>How are duplicate companies handled?</h3>
+    <p>
+      The engine matches on HubSpot company ID (<span class="pill">hs_object_id</span>). If a Productboard company already has this external ID set, it is updated rather than re-created. If two HubSpot companies share a domain, they are both synced as separate Productboard companies.
+    </p>
+
+    <h3>What happens if I delete a company in HubSpot?</h3>
+    <p>
+      Deleted HubSpot companies are not automatically removed from Productboard. The integration only creates and updates — it does not delete. You'll need to archive the company manually in Productboard.
+    </p>
+
+    <h3>Can I run this locally without a GCP project?</h3>
+    <p>
+      Yes. Set <code>FIRESTORE_EMULATOR_HOST=127.0.0.1:8080</code> and <code>FIRESTORE_PROJECT_ID=demo-local</code> in your <code>.env</code> file, then run <code>npm run dev</code>. Scheduled syncs require Cloud Scheduler and won't work locally, but you can trigger syncs manually from the UI.
+    </p>
+
+    <h3>How do I grant another team member access?</h3>
+    <p>
+      Access is controlled by Google OAuth — any user in your allowed Google Workspace domain can sign in. To restrict to specific addresses, set <code>GOOGLE_ALLOWED_EMAILS</code> in your environment. Ask your infrastructure team to update the environment variable and redeploy.
+    </p>
+
+    <h3>Where are my API keys stored?</h3>
+    <p>
+      API keys are encrypted and stored in Google Cloud Secret Manager in production. They are never written to the database or logs. In local development, they are stored in Firestore emulator state (not uploaded anywhere).
+    </p>
+
+    <hr />
+
+    <p style="font-size:13px;color:var(--muted);text-align:center;">
+      HubSpot Productboard Integration · Built by the Solutions Architecture team · <a href="/">Back to app</a>
+    </p>
+  </main>
+
+</div>
+
+<script>
+  const links = document.querySelectorAll('.nav-link');
+  const headings = Array.from(document.querySelectorAll('h2[id], h3[id]'));
+
+  function getActiveId() {
+    const threshold = window.scrollY + 120;
+    let activeId = headings[0]?.id ?? null;
+    for (const h of headings) {
+      if (h.offsetTop <= threshold) activeId = h.id;
+    }
+    return activeId;
+  }
+
+  function setActive(id) {
+    links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + id));
+  }
+
+  window.addEventListener('scroll', () => setActive(getActiveId()), { passive: true });
+
+  links.forEach(link => {
+    link.addEventListener('click', () => {
+      const id = link.getAttribute('href')?.slice(1);
+      if (id) setActive(id);
+    });
+  });
+
+  setActive(getActiveId());
+</script>
+</body>
+</html>

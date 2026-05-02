@@ -1,0 +1,90 @@
+import { Router } from 'express';
+import { randomUUID } from 'crypto';
+import { runSync, requestCancel } from '../sync/engine';
+import { getSyncConfig, getSyncHistory, getSyncRun, updateSyncConfig } from '../lib/firestore';
+import type { SseEmitter, SyncEvent } from '../types/sync';
+
+export const router = Router();
+
+// In-memory map of SSE emitters keyed by runId
+const sseEmitters = new Map<string, SseEmitter>();
+
+router.post('/run', async (req, res) => {
+  try {
+    const syncConfig = await getSyncConfig();
+    if (syncConfig.inProgress) {
+      return res.status(409).json({ error: 'Sync already in progress' });
+    }
+
+    const { trigger = 'ui' } = req.body as { trigger?: 'ui' | 'scheduler' };
+    const runId = randomUUID();
+
+    await updateSyncConfig({ inProgress: true });
+
+    // Start sync in background
+    const emitter: SseEmitter = (event) => {
+      const fn = sseEmitters.get(runId);
+      if (fn) fn(event);
+    };
+
+    setImmediate(async () => {
+      try {
+        await runSync({ trigger, runId, sseEmitter: emitter });
+      } catch (err) {
+        console.error(`Sync run ${runId} failed:`, err);
+      } finally {
+        sseEmitters.delete(runId);
+      }
+    });
+
+    res.json({ runId });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to start sync' });
+  }
+});
+
+router.delete('/runs/:id', (req, res) => {
+  const { id } = req.params;
+  const cancelled = requestCancel(id);
+  res.status(202).json({ cancelled });
+});
+
+router.get('/runs/:id/stream', (req, res) => {
+  const { id } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (event: SyncEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (event.type === 'done') res.end();
+  };
+
+  sseEmitters.set(id, send);
+
+  req.on('close', () => {
+    sseEmitters.delete(id);
+  });
+});
+
+router.get('/runs', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt((req.query.limit as string) ?? '20', 10), 100);
+    const runs = await getSyncHistory(limit);
+    res.json(runs);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load sync history' });
+  }
+});
+
+router.get('/runs/:id', async (req, res) => {
+  try {
+    const run = await getSyncRun(req.params.id);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
+    res.json(run);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load sync run' });
+  }
+});

@@ -1,0 +1,11 @@
+project_id            = "your-gcp-project-id"
+region                = "us-central1"
+service_name          = "pb-hubspot-sync"
+image                 = "gcr.io/your-gcp-project-id/pb-hubspot-sync:latest"
+app_url               = "https://pb-hubspot-sync-xxxxxxxx-uc.a.run.app"
+google_allowed_domain = "yourdomain.com"
+google_allowed_emails = ""     # optional: "admin@yourdomain.com,ops@yourdomain.com"
+sync_concurrency      = 5
+scheduler_schedule    = "0 2 * * *"   # daily at 02:00 UTC
+scheduler_timezone    = "UTC"
+history_retention_days = 90

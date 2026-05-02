@@ -1,0 +1,498 @@
+/**
+ * Design tokens — colors, typography, shadows, radii, motion.
+ *
+ * All tokens are CSS custom properties. Use OKLCH values exactly as written;
+ * do not reinterpret as hex.
+ *
+ * Typography uses Mulish (Google Fonts) — a humanist sans-serif close in
+ * proportion and weight coverage to Proxima Nova. Loaded via @import below.
+ * In production, prefer self-hosting (e.g. fontsource/@fontsource/mulish)
+ * over the CDN @import for performance and offline reliability.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Mulish:ital,wght@0,300..900;1,300..900&display=swap');
+
+:root {
+  /* ---------- Semantic Colors (light) ---------- */
+  --background: oklch(100% 0 0);
+  --foreground: oklch(26% 0.02 241);
+  --primary: oklch(63% 0.2 254);
+  --primary-hover: oklch(65.9286% 0.181 256.838);
+  --primary-active: oklch(71.7999% 0.146 261.4527);
+  --primary-foreground: oklch(100% 0 0);
+  --accent: oklch(97% 0.02 259);
+  --accent-foreground: oklch(44% 0.16 257);
+  --secondary: oklch(96% 0.01 286);
+  --secondary-foreground: oklch(46% 0.03 257);
+  --muted: oklch(96.9994% 0.005 286.2295);
+  --muted-foreground: oklch(57% 0.03 267);
+  --destructive: oklch(60% 0.23 25);
+  --destructive-foreground: oklch(100% 0 0);
+  --destructive-accent: oklch(96% 0.02 17);
+  --destructive-accent-foreground: oklch(39% 0.15 12);
+  --success: oklch(56% 0.16 144);
+  --success-foreground: oklch(100% 0 0);
+  --success-accent: oklch(97% 0.03 140);
+  --success-accent-foreground: oklch(45% 0.12 148);
+  --warning: oklch(66% 0.19 43);
+  --warning-foreground: oklch(100% 0 0);
+  --warning-accent: oklch(96% 0.03 72);
+  --warning-accent-foreground: oklch(42% 0.13 37);
+  --premium: oklch(85% 0.17 87);
+  --premium-foreground: oklch(20% 0.04 49);
+  --premium-accent: oklch(98% 0.04 100);
+  --premium-accent-foreground: oklch(45% 0.1 61);
+  --discover: oklch(48% 0.22 310);
+  --discover-foreground: oklch(100% 0 0);
+  --discover-accent: oklch(96% 0.02 315);
+  --discover-accent-foreground: oklch(37% 0.17 303);
+  --border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --input: oklch(56.9997% 0.03 267.0029 / 0.3);
+  --card: oklch(100% 0 0);
+  --card-foreground: oklch(26% 0.02 241);
+  --popover: oklch(100% 0 0);
+  --popover-foreground: oklch(26% 0.02 241);
+  --ring: oklch(83% 0.09 256);
+  --ring-offset: oklch(100% 0 0);
+  --sidebar: oklch(100% 0 0);
+  --sidebar-foreground: oklch(26% 0.02 241);
+  --sidebar-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+
+  /* ---------- Brand palette (10-stop scales) ---------- */
+  --blue-50:  oklch(98% 0.01 260); --blue-100: oklch(97% 0.02 259); --blue-200: oklch(91% 0.04 258);
+  --blue-300: oklch(83% 0.09 256); --blue-400: oklch(76% 0.12 255); --blue-500: oklch(63% 0.2 254);
+  --blue-600: oklch(56% 0.19 255); --blue-700: oklch(44% 0.16 257); --blue-800: oklch(35% 0.12 258);
+  --blue-900: oklch(30% 0.1 258);  --blue-950: oklch(27% 0.09 258);
+
+  --teal-50: oklch(98% 0.01 181);  --teal-100: oklch(97% 0.02 182); --teal-200: oklch(93% 0.04 180);
+  --teal-300: oklch(88% 0.07 180); --teal-400: oklch(83% 0.11 179); --teal-500: oklch(80% 0.14 176);
+  --teal-600: oklch(63% 0.11 185); --teal-700: oklch(49% 0.08 192); --teal-800: oklch(34% 0.05 198);
+  --teal-900: oklch(26% 0.04 200); --teal-950: oklch(20% 0.03 202);
+
+  --green-50: oklch(98% 0.02 140); --green-100: oklch(97% 0.03 140); --green-200: oklch(93% 0.07 140);
+  --green-300: oklch(88% 0.12 139);--green-400: oklch(83% 0.18 139); --green-500: oklch(77% 0.23 139);
+  --green-600: oklch(56% 0.16 144);--green-700: oklch(45% 0.12 148); --green-800: oklch(32% 0.07 156);
+  --green-900: oklch(25% 0.04 162);--green-950: oklch(20% 0.03 167);
+
+  --lime-50: oklch(98% 0.04 116);  --lime-100: oklch(97% 0.05 117); --lime-200: oklch(95% 0.08 117);
+  --lime-300: oklch(91% 0.12 118); --lime-400: oklch(87% 0.16 119); --lime-500: oklch(81% 0.18 121);
+  --lime-600: oklch(58% 0.14 126); --lime-700: oklch(47% 0.11 129); --lime-800: oklch(33% 0.08 131);
+  --lime-900: oklch(25% 0.06 132); --lime-950: oklch(20% 0.04 132);
+
+  --yellow-50: oklch(99% 0.02 101); --yellow-100: oklch(98% 0.04 100); --yellow-200: oklch(96% 0.07 100);
+  --yellow-300: oklch(94% 0.11 99); --yellow-400: oklch(90% 0.16 97); --yellow-500: oklch(85% 0.17 87);
+  --yellow-600: oklch(65% 0.14 74); --yellow-700: oklch(45% 0.1 61); --yellow-800: oklch(31% 0.07 54);
+  --yellow-900: oklch(25% 0.05 49); --yellow-950: oklch(20% 0.04 49);
+
+  --orange-50: oklch(98% 0.02 73); --orange-100: oklch(96% 0.03 72); --orange-200: oklch(93% 0.05 70);
+  --orange-300: oklch(87% 0.09 65);--orange-400: oklch(77% 0.15 56); --orange-500: oklch(66% 0.19 43);
+  --orange-600: oklch(56% 0.17 40);--orange-700: oklch(42% 0.13 37); --orange-800: oklch(30% 0.1 36);
+  --orange-900: oklch(24% 0.08 35);--orange-950: oklch(20% 0.06 36);
+
+  --red-50: oklch(99% 0.01 17); --red-100: oklch(96% 0.02 17); --red-200: oklch(90% 0.05 16);
+  --red-300: oklch(80% 0.11 17);--red-400: oklch(67% 0.19 20);--red-500: oklch(60% 0.23 25);
+  --red-600: oklch(51% 0.2 19); --red-700: oklch(39% 0.15 12);--red-800: oklch(30% 0.11 6);
+  --red-900: oklch(24% 0.09 1); --red-950: oklch(20% 0.07 358);
+
+  --pink-50: oklch(98% 0.01 345); --pink-100: oklch(96% 0.02 344);--pink-200: oklch(90% 0.05 346);
+  --pink-300: oklch(81% 0.11 347);--pink-400: oklch(67% 0.2 349); --pink-500: oklch(59% 0.23 356);
+  --pink-600: oklch(51% 0.19 1);  --pink-700: oklch(39% 0.14 9);  --pink-800: oklch(29% 0.1 13);
+  --pink-900: oklch(24% 0.08 15); --pink-950: oklch(20% 0.06 16);
+
+  --purple-50: oklch(98% 0.01 314);--purple-100: oklch(96% 0.02 315);--purple-200: oklch(90% 0.05 315);
+  --purple-300: oklch(81% 0.1 316);--purple-400: oklch(65% 0.21 318);--purple-500: oklch(58% 0.25 316);
+  --purple-600: oklch(48% 0.22 310);--purple-700: oklch(37% 0.17 303);--purple-800: oklch(28% 0.13 296);
+  --purple-900: oklch(23% 0.11 294);--purple-950: oklch(20% 0.09 293);
+
+  --midnight-50: oklch(98% 0 286);  --midnight-100: oklch(96% 0.01 286); --midnight-200: oklch(90% 0.01 286);
+  --midnight-300: oklch(81% 0.02 280);--midnight-400: oklch(76% 0.03 275);--midnight-500: oklch(57% 0.03 267);
+  --midnight-600: oklch(46% 0.03 257);--midnight-700: oklch(35% 0.03 250);--midnight-800: oklch(26% 0.02 241);
+  --midnight-900: oklch(20% 0.02 235);--midnight-950: oklch(14% 0.02 270);
+
+  --white: oklch(100% 0 0);
+
+  /* ---------- Shadows ---------- */
+  --shadow-2xs: 0px 1.008px 2px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+  --shadow-xs:  0px 3.008px 10px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+  --shadow-sm:  0px 10px 20px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+  --shadow-md:  0px 20px 30px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+  --shadow-lg:  0px 35.008px 60px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+  --shadow-xl:  0px 65.008px 100px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+  --shadow-2xl: 0px 120px 150px 0px rgb(10.742% 14.665% 17.615% / 0.15);
+
+  /* ---------- Radius ---------- */
+  --radius-xs: 2px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-full: 9999px;
+  --radius: 4px; /* default used by `rounded` utility */
+
+  /* ---------- Spacing (4pt grid, legacy-compat px) ---------- */
+  --spacing: 4px;
+
+  /* ---------- Type ---------- */
+  --font-sans: "Mulish", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-serif: Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: Menlo, Consolas, monospace;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Text sizes */
+  --text-xs:   12px; --text-xs-lh: 16px;
+  --text-sm:   14px; --text-sm-lh: 20px;
+  --text-base: 16px; --text-base-lh: 24px;
+  --text-lg:   18px; --text-lg-lh: 28px;
+  --text-xl:   20px; --text-xl-lh: 28px;
+  --text-2xl:  24px; --text-2xl-lh: 32px;
+  --text-3xl:  30px; --text-3xl-lh: 36px;
+  --text-4xl:  36px; --text-4xl-lh: 40px;
+
+  /* Semantic type styles */
+  --display-font-size: clamp(28px, 20px + 1.5vw, 36px);
+  --display-line-height: clamp(34px, 24px + 1.75vw, 40px);
+  --display-font-weight: 700;
+  --display-letter-spacing: -0.02em;
+
+  --title-lg-font-size: clamp(24px, 18px + 1vw, 30px);
+  --title-lg-line-height: clamp(28px, 20px + 1vw, 36px);
+  --title-lg-font-weight: 700;
+  --title-lg-letter-spacing: -0.015em;
+
+  --title-md-font-size: clamp(20px, 16px + 0.75vw, 24px);
+  --title-md-line-height: clamp(24px, 18px + 0.75vw, 28px);
+  --title-md-font-weight: 700;
+
+  --title-sm-font-size: 20px; --title-sm-line-height: 24px; --title-sm-font-weight: 700;
+  --title-xs-font-size: 16px; --title-xs-line-height: 24px; --title-xs-font-weight: 700;
+  --title-xs-letter-spacing: 0.0075em; /* Positive tracking for legibility at small sizes */
+
+  --body-lg-font-size: 16px; --body-lg-line-height: 24px; --body-lg-letter-spacing: 0.0075em;
+  --body-md-font-size: 14px; --body-md-line-height: 20px; --body-md-letter-spacing: 0.0075em;
+  --body-sm-font-size: 12px; --body-sm-line-height: 16px; --body-sm-letter-spacing: 0.025em;
+
+  /* ---------- Easing (motion) — 18-curve motion library ---------- */
+  /* ins */
+  --ease-in-quad:   cubic-bezier(0.55, 0.085, 0.68, 0.53);
+  --ease-in-cubic:  cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  --ease-in-quart:  cubic-bezier(0.895, 0.03, 0.685, 0.22);
+  --ease-in-quint:  cubic-bezier(0.755, 0.05, 0.855, 0.06);
+  --ease-in-expo:   cubic-bezier(0.95, 0.05, 0.795, 0.035);
+  --ease-in-circ:   cubic-bezier(0.6, 0.04, 0.98, 0.335);
+  /* outs */
+  --ease-out-quad:  cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-out-expo:  cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-out-circ:  cubic-bezier(0.075, 0.82, 0.165, 1);
+  /* in-outs */
+  --ease-in-out-quad:  cubic-bezier(0.455, 0.03, 0.515, 0.955);
+  --ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --ease-in-out-quart: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-in-out-quint: cubic-bezier(0.86, 0, 0.07, 1);
+  --ease-in-out-expo:  cubic-bezier(1, 0, 0, 1);
+  --ease-in-out-circ:  cubic-bezier(0.785, 0.135, 0.15, 0.86);
+
+  /* ---------- Button tokens (from shadcn-design-tokens/index.css) ---------- */
+  /* Filled */
+  --button-filled-primary: oklch(63% 0.2 254);
+  --button-filled-primary-foreground: oklch(100% 0 0);
+  --button-filled-primary-hover: oklch(65.9286% 0.181 256.838);
+  --button-filled-primary-active: oklch(71.7999% 0.146 261.4527);
+  --button-filled-disabled: oklch(96.9994% 0.005 286.2295);
+  --button-filled-disabled-foreground: oklch(81% 0.02 280);
+  --button-filled-secondary: oklch(46% 0.03 257);
+  --button-filled-secondary-foreground: oklch(100% 0 0);
+  --button-filled-secondary-hover: oklch(50.3185% 0.0274 257.5263);
+  --button-filled-secondary-active: oklch(58.9566% 0.0225 258.3256);
+  --button-filled-destructive: oklch(60% 0.23 25);
+  --button-filled-destructive-foreground: oklch(100% 0 0);
+  --button-filled-destructive-hover: oklch(63.1695% 0.213 26.0031);
+  --button-filled-destructive-active: oklch(69.5323% 0.1785 27.4316);
+  --button-filled-success: oklch(56% 0.16 144);
+  --button-filled-success-foreground: oklch(100% 0 0);
+  --button-filled-success-hover: oklch(59.4898% 0.1487 143.5118);
+  --button-filled-success-active: oklch(66.4914% 0.1245 142.734);
+  --button-filled-warning: oklch(66% 0.19 43);
+  --button-filled-warning-foreground: oklch(100% 0 0);
+  --button-filled-warning-hover: oklch(68.6866% 0.179 44.423);
+  --button-filled-warning-active: oklch(74.0821% 0.1544 46.2975);
+  --button-filled-discover: oklch(48% 0.22 310);
+  --button-filled-discover-foreground: oklch(100% 0 0);
+  --button-filled-discover-hover: oklch(52.0244% 0.2057 311.2204);
+  --button-filled-discover-active: oklch(60.1977% 0.1736 313.0122);
+  --button-filled-inverse: oklch(100% 0 0);
+  --button-filled-inverse-foreground: oklch(26% 0.02 241);
+  --button-filled-inverse-hover: oklch(94.9995% 0.005 286.258);
+  --button-filled-inverse-active: oklch(78.4966% 0.0148 268.7485);
+  --button-filled-inverse-disabled: oklch(100% 0 129.6259 / 0.04);
+  --button-filled-inverse-disabled-foreground: oklch(100% 0 129.6259 / 0.24);
+
+  /* Outline */
+  --button-outline-primary: oklch(100% 0 0);
+  --button-outline-primary-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-primary-foreground: oklch(63% 0.2 254);
+  --button-outline-primary-hover: oklch(62.9996% 0.2 253.9997 / 0.12);
+  --button-outline-primary-hover-foreground: oklch(56% 0.19 255);
+  --button-outline-primary-hover-border: oklch(62.9996% 0.2 253.9997 / 0.2);
+  --button-outline-primary-active: oklch(62.9996% 0.2 253.9997 / 0.2);
+  --button-outline-primary-active-border: oklch(62.9996% 0.2 253.9997 / 0.4);
+  --button-outline-primary-active-foreground: oklch(56% 0.19 255);
+  --button-outline-disabled: oklch(96.9994% 0.005 286.2295);
+  --button-outline-disabled-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-disabled-foreground: oklch(81% 0.02 280);
+  --button-outline-secondary: oklch(100% 0 0);
+  --button-outline-secondary-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-secondary-foreground: oklch(46% 0.03 257);
+  --button-outline-secondary-hover: oklch(45.9997% 0.03 256.9976 / 0.12);
+  --button-outline-secondary-hover-foreground: oklch(35% 0.03 250);
+  --button-outline-secondary-hover-border: oklch(45.9997% 0.03 256.9976 / 0.2);
+  --button-outline-secondary-active: oklch(45.9997% 0.03 256.9976 / 0.2);
+  --button-outline-secondary-active-border: oklch(45.9997% 0.03 256.9976 / 0.4);
+  --button-outline-secondary-active-foreground: oklch(35% 0.03 250);
+  --button-outline-destructive: oklch(100% 0 0);
+  --button-outline-destructive-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-destructive-foreground: oklch(60% 0.23 25);
+  --button-outline-destructive-hover: oklch(60.0001% 0.23 25.0002 / 0.12);
+  --button-outline-destructive-hover-foreground: oklch(51% 0.2 19);
+  --button-outline-destructive-hover-border: oklch(60.0001% 0.23 25.0002 / 0.2);
+  --button-outline-destructive-active: oklch(60.0001% 0.23 25.0002 / 0.2);
+  --button-outline-destructive-active-border: oklch(60.0001% 0.23 25.0002 / 0.4);
+  --button-outline-destructive-active-foreground: oklch(51% 0.2 19);
+  --button-outline-success: oklch(100% 0 0);
+  --button-outline-success-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-success-foreground: oklch(56% 0.16 144);
+  --button-outline-success-hover: oklch(55.9996% 0.16 144.003 / 0.12);
+  --button-outline-success-hover-foreground: oklch(45% 0.12 148);
+  --button-outline-success-hover-border: oklch(55.9996% 0.16 144.003 / 0.2);
+  --button-outline-success-active: oklch(55.9996% 0.16 144.003 / 0.2);
+  --button-outline-success-active-border: oklch(55.9996% 0.16 144.003 / 0.4);
+  --button-outline-success-active-foreground: oklch(45% 0.12 148);
+  --button-outline-warning: oklch(100% 0 0);
+  --button-outline-warning-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-warning-foreground: oklch(66% 0.19 43);
+  --button-outline-warning-hover: oklch(66.0004% 0.19 42.9997 / 0.12);
+  --button-outline-warning-hover-foreground: oklch(56% 0.17 40);
+  --button-outline-warning-hover-border: oklch(66.0004% 0.19 42.9997 / 0.2);
+  --button-outline-warning-active: oklch(66.0004% 0.19 42.9997 / 0.2);
+  --button-outline-warning-active-border: oklch(66.0004% 0.19 42.9997 / 0.4);
+  --button-outline-warning-active-foreground: oklch(56% 0.17 40);
+  --button-outline-discover: oklch(100% 0 0);
+  --button-outline-discover-border: oklch(56.9997% 0.03 267.0029 / 0.2);
+  --button-outline-discover-foreground: oklch(48% 0.22 310);
+  --button-outline-discover-hover: oklch(48.0003% 0.22 310.0045 / 0.12);
+  --button-outline-discover-hover-foreground: oklch(37% 0.17 303);
+  --button-outline-discover-hover-border: oklch(48.0003% 0.22 310.0045 / 0.2);
+  --button-outline-discover-active: oklch(48.0003% 0.22 310.0045 / 0.2);
+  --button-outline-discover-active-border: oklch(48.0003% 0.22 310.0045 / 0.4);
+  --button-outline-discover-active-foreground: oklch(37% 0.17 303);
+  --button-outline-inverse: oklch(26% 0.02 241);
+  --button-outline-inverse-border: oklch(100% 0 129.6259 / 0.24);
+  --button-outline-inverse-foreground: oklch(100% 0 0);
+  --button-outline-inverse-hover: oklch(31.9185% 0.0182 241.6993);
+  --button-outline-inverse-hover-border: oklch(100% 0 129.6259 / 0.32);
+  --button-outline-inverse-active: oklch(37.8381% 0.0164 242.1544);
+  --button-outline-inverse-active-border: oklch(100% 0 129.6259 / 0.4);
+  --button-outline-inverse-disabled-border: oklch(100% 0 129.6259 / 0.12);
+  --button-outline-inverse-disabled-foreground: oklch(100% 0 129.6259 / 0.24);
+
+  /* Ghost */
+  --button-ghost-primary-foreground: oklch(63% 0.2 254);
+  --button-ghost-primary-hover: oklch(62.9996% 0.2 253.9997 / 0.12);
+  --button-ghost-primary-hover-foreground: oklch(56% 0.19 255);
+  --button-ghost-primary-active: oklch(62.9996% 0.2 253.9997 / 0.2);
+  --button-ghost-primary-active-foreground: oklch(56% 0.19 255);
+  --button-ghost-disabled-foreground: oklch(81% 0.02 280);
+  --button-ghost-secondary-foreground: oklch(46% 0.03 257);
+  --button-ghost-secondary-hover: oklch(45.9997% 0.03 256.9976 / 0.12);
+  --button-ghost-secondary-hover-foreground: oklch(35% 0.03 250);
+  --button-ghost-secondary-active: oklch(45.9997% 0.03 256.9976 / 0.2);
+  --button-ghost-secondary-active-foreground: oklch(35% 0.03 250);
+  --button-ghost-destructive-foreground: oklch(60% 0.23 25);
+  --button-ghost-destructive-hover: oklch(60.0001% 0.23 25.0002 / 0.12);
+  --button-ghost-destructive-hover-foreground: oklch(51% 0.2 19);
+  --button-ghost-destructive-active: oklch(60.0001% 0.23 25.0002 / 0.2);
+  --button-ghost-destructive-active-foreground: oklch(51% 0.2 19);
+  --button-ghost-success-foreground: oklch(56% 0.16 144);
+  --button-ghost-success-hover: oklch(55.9996% 0.16 144.003 / 0.12);
+  --button-ghost-success-hover-foreground: oklch(45% 0.12 148);
+  --button-ghost-success-active: oklch(55.9996% 0.16 144.003 / 0.2);
+  --button-ghost-success-active-foreground: oklch(45% 0.12 148);
+  --button-ghost-warning-foreground: oklch(66% 0.19 43);
+  --button-ghost-warning-hover: oklch(66.0004% 0.19 42.9997 / 0.12);
+  --button-ghost-warning-hover-foreground: oklch(56% 0.17 40);
+  --button-ghost-warning-active: oklch(66.0004% 0.19 42.9997 / 0.2);
+  --button-ghost-warning-active-foreground: oklch(56% 0.17 40);
+  --button-ghost-discover-foreground: oklch(48% 0.22 310);
+  --button-ghost-discover-hover: oklch(48.0003% 0.22 310.0045 / 0.12);
+  --button-ghost-discover-hover-foreground: oklch(37% 0.17 303);
+  --button-ghost-discover-active: oklch(48.0003% 0.22 310.0045 / 0.2);
+  --button-ghost-discover-active-foreground: oklch(37% 0.17 303);
+  --button-ghost-inverse-foreground: oklch(100% 0 0);
+  --button-ghost-inverse-hover: oklch(31.9185% 0.0182 241.6993);
+  --button-ghost-inverse-active: oklch(37.8381% 0.0164 242.1544);
+  --button-ghost-inverse-disabled-foreground: oklch(100% 0 129.6259 / 0.24);
+
+  /* ---------- Status tokens (12 colors, base + accent, from shadcn-design-tokens) ---------- */
+  /* Blue */
+  --status-blue-base: oklch(63% 0.2 254);
+  --status-blue-hover: oklch(56% 0.19 255);
+  --status-blue-foreground: oklch(100% 0 0);
+  --status-blue-accent: oklch(91% 0.04 258);
+  --status-blue-accent-foreground: oklch(44% 0.16 257);
+  /* Teal */
+  --status-teal-base: oklch(80% 0.14 176);
+  --status-teal-hover: oklch(83% 0.11 179);
+  --status-teal-foreground: oklch(20% 0.03 202);
+  --status-teal-accent: oklch(93% 0.04 180);
+  --status-teal-accent-foreground: oklch(49% 0.08 192);
+  /* Green */
+  --status-green-base: oklch(77% 0.23 139);
+  --status-green-hover: oklch(83% 0.18 139);
+  --status-green-foreground: oklch(20% 0.03 167);
+  --status-green-accent: oklch(93% 0.07 140);
+  --status-green-accent-foreground: oklch(45% 0.12 148);
+  /* Lime */
+  --status-lime-base: oklch(81% 0.18 121);
+  --status-lime-hover: oklch(87% 0.16 119);
+  --status-lime-foreground: oklch(20% 0.04 132);
+  --status-lime-accent: oklch(95% 0.08 117);
+  --status-lime-accent-foreground: oklch(47% 0.11 129);
+  /* Yellow */
+  --status-yellow-base: oklch(85% 0.17 87);
+  --status-yellow-hover: oklch(90% 0.16 97);
+  --status-yellow-foreground: oklch(20% 0.04 49);
+  --status-yellow-accent: oklch(96% 0.07 100);
+  --status-yellow-accent-foreground: oklch(45% 0.1 61);
+  /* Orange */
+  --status-orange-base: oklch(66% 0.19 43);
+  --status-orange-hover: oklch(77% 0.15 56);
+  --status-orange-foreground: oklch(100% 0 0);
+  --status-orange-accent: oklch(93% 0.05 70);
+  --status-orange-accent-foreground: oklch(42% 0.13 37);
+  /* Red */
+  --status-red-base: oklch(60% 0.23 25);
+  --status-red-hover: oklch(51% 0.2 19);
+  --status-red-foreground: oklch(100% 0 0);
+  --status-red-accent: oklch(90% 0.05 16);
+  --status-red-accent-foreground: oklch(39% 0.15 12);
+  /* Pink */
+  --status-pink-base: oklch(59% 0.23 356);
+  --status-pink-hover: oklch(51% 0.19 1);
+  --status-pink-foreground: oklch(100% 0 0);
+  --status-pink-accent: oklch(90% 0.05 346);
+  --status-pink-accent-foreground: oklch(29% 0.1 13);
+  /* Purple */
+  --status-purple-base: oklch(58% 0.25 316);
+  --status-purple-hover: oklch(48% 0.22 310);
+  --status-purple-foreground: oklch(100% 0 0);
+  --status-purple-accent: oklch(90% 0.05 315);
+  --status-purple-accent-foreground: oklch(37% 0.17 303);
+  /* Gray */
+  --status-gray-base: oklch(81% 0.02 280);
+  --status-gray-hover: oklch(76% 0.03 275);
+  --status-gray-foreground: oklch(14% 0.02 270);
+  --status-gray-accent: oklch(90% 0.01 286);
+  --status-gray-accent-foreground: oklch(35% 0.03 250);
+  /* Neutral */
+  --status-neutral-base: oklch(57% 0.03 267);
+  --status-neutral-hover: oklch(46% 0.03 257);
+  --status-neutral-foreground: oklch(100% 0 0);
+  --status-neutral-accent: oklch(81% 0.02 280);
+  --status-neutral-accent-foreground: oklch(20% 0.02 235);
+}
+
+/* ---------- Dark theme overrides ---------- */
+.dark {
+  --background: oklch(14% 0.02 270);
+  --foreground: oklch(98% 0 286);
+  --primary: oklch(76% 0.12 255);
+  --primary-foreground: oklch(14% 0.02 270);
+  --accent: oklch(30% 0.1 258);
+  --accent-foreground: oklch(91% 0.04 258);
+  --secondary: oklch(26% 0.02 241);
+  --secondary-foreground: oklch(81% 0.02 280);
+  --muted: oklch(20% 0.02 235);
+  --muted-foreground: oklch(57% 0.03 267);
+  --destructive: oklch(71.931% 0.1621 20.5269);
+  --destructive-foreground: oklch(14% 0.02 270);
+  --success: oklch(77% 0.23 139);
+  --success-foreground: oklch(14% 0.02 270);
+  --border: oklch(56.9997% 0.03 267.0029 / 0.3);
+  --input: oklch(56.9997% 0.03 267.0029 / 0.4);
+  --card: oklch(20% 0.02 235);
+  --card-foreground: oklch(98% 0 286);
+  --popover: oklch(26% 0.02 241);
+  --popover-foreground: oklch(98% 0 286);
+  --ring: oklch(44% 0.16 257);
+  --ring-offset: oklch(14% 0.02 270);
+  --sidebar: oklch(20% 0.02 235);
+  --sidebar-foreground: oklch(98% 0 286);
+}
+
+/* ---------- Semantic element styles (opinionated defaults) ---------- */
+html {
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-size: var(--body-md-font-size);
+  line-height: var(--body-md-line-height);
+  letter-spacing: var(--body-md-letter-spacing);
+  color: var(--foreground);
+}
+
+h1, .ds-display {
+  font-size: var(--display-font-size);
+  line-height: var(--display-line-height);
+  font-weight: var(--display-font-weight);
+  letter-spacing: var(--display-letter-spacing);
+}
+h2, .ds-title-lg {
+  font-size: var(--title-lg-font-size);
+  line-height: var(--title-lg-line-height);
+  font-weight: var(--title-lg-font-weight);
+  letter-spacing: var(--title-lg-letter-spacing);
+}
+h3, .ds-title-md {
+  font-size: var(--title-md-font-size);
+  line-height: var(--title-md-line-height);
+  font-weight: var(--title-md-font-weight);
+}
+h4, .ds-title-sm {
+  font-size: var(--title-sm-font-size);
+  line-height: var(--title-sm-line-height);
+  font-weight: var(--title-sm-font-weight);
+}
+h5, .ds-title-xs {
+  font-size: var(--title-xs-font-size);
+  line-height: var(--title-xs-line-height);
+  font-weight: var(--title-xs-font-weight);
+  letter-spacing: var(--title-xs-letter-spacing);
+}
+.ds-body-lg { font-size: var(--body-lg-font-size); line-height: var(--body-lg-line-height); letter-spacing: var(--body-lg-letter-spacing); }
+.ds-body-md { font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); letter-spacing: var(--body-md-letter-spacing); }
+.ds-body-sm { font-size: var(--body-sm-font-size); line-height: var(--body-sm-line-height); letter-spacing: var(--body-sm-letter-spacing); }
+code, .ds-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  background: var(--muted);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

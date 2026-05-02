@@ -1,0 +1,50 @@
+# environment
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# build
+dist/
+build/
+*.js.map
+
+# deps
+node_modules/
+
+# logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# test artifacts
+coverage/
+
+# local work state (not for git)
+WORK.md
+implementation_notes/
+*.local
+
+# claude local env (safe to commit: .claude/.env.example)
+.claude/
+
+# Firestore emulator persistent data
+.firebase-data/
+
+# Firebase emulator export snapshots
+firebase-export-*/
+
+# Local planning and implementation docs
+planning-docs/
+
+# Local dev store (contains API tokens — never commit)
+.dev-store.json
+.dev-tokens.json
