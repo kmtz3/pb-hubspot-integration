@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Loader2, XCircle, CheckCircle, AlertCircle, ChevronDown, CalendarClock } from 'lucide-react';
-import { useConfig, useSaveConfig, useStartSync, useCancelSync, useSyncRuns } from '../../hooks/api';
-import { useSyncStream } from '../../hooks/useSyncStream';
-import InlineAlert from '../ui/InlineAlert';
-import type { SyncConfig, SyncStats, SyncRun } from '../../../types/sync';
+import { useConfig, useSaveConfig, useStartSync, useCancelSync, useSyncRuns } from '../../../hooks/api';
+import { useSyncStream } from '../../../hooks/useSyncStream';
+import InlineAlert from '../../ui/InlineAlert';
+import type { SyncConfig, SyncStats, SyncRun } from '../../../../types/sync';
 
 const TIMEZONES = [
   'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
@@ -20,7 +20,7 @@ const TIME_OPTIONS = ['00:00','01:00','02:00','03:00','04:00','05:00','06:00',
   '15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
 
 // Ordered longest interval → shortest (Manual stays at top as the "no schedule" choice).
-const SCHEDULE_OPTIONS: { value: SyncConfig['schedule']; label: string; desc: string }[] = [
+const SCHEDULE_OPTIONS: { value: NonNullable<SyncConfig['legacySchedule']>; label: string; desc: string }[] = [
   { value: 'manual',  label: 'Manual only',        desc: "Sync runs only when you click 'Sync now'. No scheduled jobs." },
   { value: 'weekly',  label: 'Weekly',              desc: 'One sweep per week — ideal if the source data is stable.' },
   { value: 'daily',   label: 'Daily',               desc: 'Recommended. One full sweep every night.' },
@@ -58,14 +58,14 @@ function zonedDateTimeToUTC(
 }
 
 function nextFireTime(sync: SyncConfig, now: Date): Date | null {
-  if (sync.schedule === 'every15' || sync.schedule === 'hourly') {
-    const intervalMs = (sync.schedule === 'every15' ? 15 : 60) * 60_000;
+  if (sync.legacySchedule === 'every15' || sync.legacySchedule === 'hourly') {
+    const intervalMs = (sync.legacySchedule === 'every15' ? 15 : 60) * 60_000;
     return new Date(Math.ceil((now.getTime() + 1) / intervalMs) * intervalMs);
   }
-  if (sync.schedule !== 'daily' && sync.schedule !== 'weekly') return null;
+  if (sync.legacySchedule !== 'daily' && sync.legacySchedule !== 'weekly') return null;
 
-  const tz = sync.timezone ?? 'America/New_York';
-  const [hh, mm] = (sync.scheduleTime ?? '02:00').split(':').map(Number);
+  const tz = sync.legacyTimezone ?? 'America/New_York';
+  const [hh, mm] = (sync.legacyScheduleTime ?? '02:00').split(':').map(Number);
   const dateFmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
   });
@@ -77,12 +77,12 @@ function nextFireTime(sync: SyncConfig, now: Date): Date | null {
     return zonedDateTimeToUTC(Number(d.year), Number(d.month), Number(d.day), hh, mm, tz);
   };
 
-  if (sync.schedule === 'daily') {
+  if (sync.legacySchedule === 'daily') {
     const today = tryOffset(0);
     return today > now ? today : tryOffset(1);
   }
 
-  const targetDow = DAY_INDEX[sync.scheduleDay ?? 'Monday'] ?? 1;
+  const targetDow = DAY_INDEX[sync.legacyScheduleDay ?? 'Monday'] ?? 1;
   for (let i = 0; i < 8; i++) {
     const candidate = tryOffset(i);
     if (candidate <= now) continue;
@@ -107,16 +107,16 @@ function formatRelative(target: Date, now: Date): string {
 // countdown. For daily/weekly, shows the absolute next-fire time in the user's
 // browser timezone plus the relative countdown for at-a-glance context.
 function formatNextFire(sync: SyncConfig, now: Date): string | null {
-  if (sync.schedule === 'manual') return null;
+  if (sync.legacySchedule === 'manual') return null;
   const next = nextFireTime(sync, now);
   if (!next) return null;
   const rel = formatRelative(next, now);
 
-  if (sync.schedule === 'every15' || sync.schedule === 'hourly') {
+  if (sync.legacySchedule === 'every15' || sync.legacySchedule === 'hourly') {
     return `next sync ${rel}`;
   }
   const abs = next.toLocaleString(undefined, {
-    weekday: sync.schedule === 'weekly' ? 'long' : undefined,
+    weekday: sync.legacySchedule === 'weekly' ? 'long' : undefined,
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
     timeZoneName: 'short',
@@ -126,7 +126,16 @@ function formatNextFire(sync: SyncConfig, now: Date): string | null {
   return rel === 'now' ? `next sync now` : `next sync at ${abs} (${rel})`;
 }
 
-type ScheduleForm = Pick<SyncConfig, 'schedule' | 'scheduleTime' | 'scheduleDay' | 'timezone'>;
+// Phase 6 replaces this with a cron picker on the new `schedule.companies`
+// field; Phase 1 keeps the existing enum picker writing the transitional
+// `legacy*` fields so `reconcileCloudScheduler` continues to drive the single
+// companies scheduler job without behavior change.
+type ScheduleForm = {
+  legacySchedule:     NonNullable<SyncConfig['legacySchedule']>;
+  legacyScheduleTime: string;
+  legacyScheduleDay:  string;
+  legacyTimezone:     string;
+};
 
 // ── Styled select ─────────────────────────────────────────────────────────────
 
@@ -388,7 +397,7 @@ export default function Schedule() {
   const sync = config?.sync;
 
   const { control, handleSubmit, watch, reset } = useForm<ScheduleForm>({
-    defaultValues: { schedule: 'manual', scheduleTime: '02:00', scheduleDay: 'Monday', timezone: 'America/New_York' },
+    defaultValues: { legacySchedule: 'manual', legacyScheduleTime: '02:00', legacyScheduleDay: 'Monday', legacyTimezone: 'America/New_York' },
   });
 
   // Sync local UI state to server-persisted `inProgress`. Deps must NOT
@@ -398,10 +407,10 @@ export default function Schedule() {
   useEffect(() => {
     if (!sync) return;
     reset({
-      schedule: sync.schedule,
-      scheduleTime: sync.scheduleTime ?? '02:00',
-      scheduleDay: sync.scheduleDay ?? 'Monday',
-      timezone: sync.timezone ?? 'America/New_York',
+      legacySchedule: sync.legacySchedule ?? 'manual',
+      legacyScheduleTime: sync.legacyScheduleTime ?? '02:00',
+      legacyScheduleDay: sync.legacyScheduleDay ?? 'Monday',
+      legacyTimezone: sync.legacyTimezone ?? 'America/New_York',
     });
     if (sync.inProgress) {
       setIsSyncing(true);
@@ -440,7 +449,7 @@ export default function Schedule() {
     return () => sub.unsubscribe();
   }, [watch, saveMutation.isSuccess, saveMutation.isError, saveMutation.reset]);
 
-  const schedule = watch('schedule');
+  const schedule = watch('legacySchedule');
 
   function onSubmit(values: ScheduleForm) {
     saveMutation.mutate({ sync: { ...sync!, ...values } });
@@ -502,7 +511,7 @@ export default function Schedule() {
 
             <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <Controller
-                name="schedule"
+                name="legacySchedule"
                 control={control}
                 render={({ field }) => (
                   <>
@@ -518,10 +527,10 @@ export default function Schedule() {
                         {field.value === 'daily' && opt.value === 'daily' && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 36, marginTop: 8, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>at</span>
-                            <Controller name="scheduleTime" control={control} render={({ field: tf }) => (
+                            <Controller name="legacyScheduleTime" control={control} render={({ field: tf }) => (
                               <StyledSelect value={tf.value ?? '02:00'} onChange={tf.onChange} options={TIME_OPTIONS} width={90} />
                             )} />
-                            <Controller name="timezone" control={control} render={({ field: tzf }) => (
+                            <Controller name="legacyTimezone" control={control} render={({ field: tzf }) => (
                               <StyledSelect value={tzf.value ?? 'America/New_York'} onChange={tzf.onChange} options={TIMEZONES} width={200} />
                             )} />
                           </div>
@@ -530,14 +539,14 @@ export default function Schedule() {
                         {field.value === 'weekly' && opt.value === 'weekly' && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 36, marginTop: 8, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>on</span>
-                            <Controller name="scheduleDay" control={control} render={({ field: df }) => (
+                            <Controller name="legacyScheduleDay" control={control} render={({ field: df }) => (
                               <StyledSelect value={df.value ?? 'Monday'} onChange={df.onChange} options={DAYS} width={130} />
                             )} />
                             <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>at</span>
-                            <Controller name="scheduleTime" control={control} render={({ field: tf }) => (
+                            <Controller name="legacyScheduleTime" control={control} render={({ field: tf }) => (
                               <StyledSelect value={tf.value ?? '02:00'} onChange={tf.onChange} options={TIME_OPTIONS} width={90} />
                             )} />
-                            <Controller name="timezone" control={control} render={({ field: tzf }) => (
+                            <Controller name="legacyTimezone" control={control} render={({ field: tzf }) => (
                               <StyledSelect value={tzf.value ?? 'America/New_York'} onChange={tzf.onChange} options={TIMEZONES} width={200} />
                             )} />
                           </div>

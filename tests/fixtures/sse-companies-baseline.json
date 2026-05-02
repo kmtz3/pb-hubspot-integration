@@ -1,0 +1,39 @@
+{
+  "_comment": "SSE event-type baseline for the companies sync, captured at the Phase 1 refactor boundary. The Phase 1 engine refactor preserves every SSE emit call from pre-refactor verbatim — this fixture documents the expected event-type sequence so Phase 2+ regressions are caught early. Payload values may vary across runs (rate, eta, hsId, name); the *type sequence* must remain identical.",
+  "scenario": "manual UI trigger, 7 HubSpot companies fetched, SYNC_CONCURRENCY=5, all dedup-resolved as creates, no errors",
+  "engine_path": "src/sync/engine.ts/runCompaniesSync",
+  "captured_at_version": "1.0.21",
+  "captured_after_refactor_version": "1.0.22",
+  "event_type_sequence": [
+    { "type": "record", "status": "created", "_per_company": "batch 1, company 1/5" },
+    { "type": "record", "status": "created", "_per_company": "batch 1, company 2/5" },
+    { "type": "record", "status": "created", "_per_company": "batch 1, company 3/5" },
+    { "type": "record", "status": "created", "_per_company": "batch 1, company 4/5" },
+    { "type": "record", "status": "created", "_per_company": "batch 1, company 5/5" },
+    { "type": "progress", "_after": "batch 1 (5/7)" },
+    { "type": "record", "status": "created", "_per_company": "batch 2, company 6/7" },
+    { "type": "record", "status": "created", "_per_company": "batch 2, company 7/7" },
+    { "type": "progress", "_after": "batch 2 (7/7)" },
+    { "type": "done", "status": "success" }
+  ],
+  "invariants": {
+    "record_before_progress": "Every `record` event for a batch fires before that batch's `progress` event. Within a batch the records emit in unordered Promise.all completion order.",
+    "progress_after_each_batch": "Exactly one `progress` event after each batch of up to SYNC_CONCURRENCY companies.",
+    "done_terminates_stream": "Exactly one `done` event at the end. The route handler closes the SSE response when it sees `done`.",
+    "skipped_short_circuit": "If `checkConnectionsForSkip` returns a non-null reason, the engine emits a single `done` event with status='skipped' and writes a skipped history record. No `record` or `progress` events fire."
+  },
+  "phase_1_refactor_audit": {
+    "emit_sites_preserved": [
+      "src/sync/engine.ts: emit({ type: 'record', status: 'skipped', ... }) — DRY_RUN branch",
+      "src/sync/engine.ts: emit({ type: 'record', status: 'updated', ... }) — existing-entity branch",
+      "src/sync/engine.ts: emit({ type: 'record', status: 'created', ... }) — new-entity branch",
+      "src/sync/engine.ts: emit({ type: 'record', status: 'error', ... }) — catch branch",
+      "src/sync/engine.ts: emit({ type: 'progress', ... }) — after each batch",
+      "src/sync/engine.ts: emit({ type: 'done', status, ... }) — end of run",
+      "src/sync/engine.ts: sseEmitter?.({ type: 'done', status: 'skipped', ... }) — short-circuit path"
+    ],
+    "phase_2_plus_additions": [
+      "Phase 4 may add deals-only event payloads (e.g. archived counter on `progress`) — the *type set* `record | progress | done` does not change."
+    ]
+  }
+}

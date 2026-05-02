@@ -6,13 +6,15 @@ jest.mock('../../src/lib/firestore');
 import { runSync } from '../../src/sync/engine';
 import { fetchCompanies } from '../../src/sync/hubspot';
 import { createEntity, updateEntity, listCompanies, fetchEntityConfigurations } from '../../src/sync/productboard';
-import { findExistingEntity, buildCompanyMaps } from '../../src/sync/dedup';
+import { findExistingCompany, buildCompanyMaps } from '../../src/sync/dedup';
 import {
   writeSyncHistory,
   updateSyncConfig,
   getSyncConfig,
   getFieldMappings,
   getAccountFilter,
+  getHubSpotConfig,
+  getPBConfig,
 } from '../../src/lib/firestore';
 import { makeHubSpotCompany, makePBEntity, makeSyncConfig, makeFieldMapping } from '../helpers/factories';
 import { ApiError } from '../../src/sync/rateLimit';
@@ -22,13 +24,15 @@ const mockCreateEntity      = jest.mocked(createEntity);
 const mockUpdateEntity      = jest.mocked(updateEntity);
 const mockListCompanies     = jest.mocked(listCompanies);
 const mockFetchPBFields     = jest.mocked(fetchEntityConfigurations);
-const mockFindExisting      = jest.mocked(findExistingEntity);
+const mockFindExisting      = jest.mocked(findExistingCompany);
 const mockBuildCompanyMaps  = jest.mocked(buildCompanyMaps);
 const mockWriteHistory      = jest.mocked(writeSyncHistory);
 const mockUpdateSyncConfig  = jest.mocked(updateSyncConfig);
 const mockGetSyncConfig     = jest.mocked(getSyncConfig);
 const mockGetFieldMappings  = jest.mocked(getFieldMappings);
 const mockGetAccountFilter  = jest.mocked(getAccountFilter);
+const mockGetHubSpotConfig  = jest.mocked(getHubSpotConfig);
+const mockGetPBConfig       = jest.mocked(getPBConfig);
 
 const defaultMappings = [
   makeFieldMapping({ hubspotProperty: 'name',   pbFieldId: 'name',   pbFieldType: 'text', locked: true }),
@@ -41,6 +45,11 @@ beforeEach(() => {
   mockGetSyncConfig.mockResolvedValue(makeSyncConfig());
   mockGetFieldMappings.mockResolvedValue(defaultMappings);
   mockGetAccountFilter.mockResolvedValue({ enabled: false, filterGroups: [] });
+  // Both connections healthy by default — `checkConnectionsForSkip` short-circuits
+  // the run with a 'skipped' status when either side is missing, which would
+  // otherwise eat through every dispatch test below.
+  mockGetHubSpotConfig.mockResolvedValue({ connected: true });
+  mockGetPBConfig.mockResolvedValue({ connected: true });
   mockWriteHistory.mockResolvedValue('run-001');
   mockUpdateSyncConfig.mockResolvedValue(undefined);
   mockFetchCompanies.mockResolvedValue([]);
@@ -236,5 +245,78 @@ describe('runSync', () => {
     expect(mockUpdateSyncConfig).toHaveBeenCalledWith(
       expect.objectContaining({ inProgress: false })
     );
+  });
+});
+
+// Phase 1 regression baseline (task 15). Pins the SSE event-type sequence the
+// companies sync emits so any future engine refactor that reorders or drops
+// emits fails the test rather than slipping through. The companion fixture
+// file at tests/fixtures/sse-companies-baseline.json has the human-readable
+// trace for diff context.
+describe('runSync — SSE event-type sequence (Phase 1 baseline)', () => {
+  it('emits records first, then a per-batch progress event, then done', async () => {
+    process.env.DRY_RUN = 'false';
+    const fakeCompanies = Array.from({ length: 7 }, (_, i) =>
+      makeHubSpotCompany({ id: `hs-${i + 1}`, properties: { name: `Co ${i + 1}`, domain: `co${i + 1}.com` } })
+    );
+    mockFetchCompanies.mockResolvedValue(fakeCompanies);
+    mockFindExisting.mockReturnValue(null);
+    mockCreateEntity.mockResolvedValue(makePBEntity());
+
+    const events: Array<{ type: string; status?: string }> = [];
+    await runSync({
+      trigger: 'ui',
+      runId: 'r-test-sse-baseline',
+      sseEmitter: (e: any) => events.push({ type: e.type, ...(e.status ? { status: e.status } : {}) }),
+    });
+
+    const types = events.map(e => e.type);
+    // 7 records, 2 progress events (5 + 2 in CONCURRENCY=5 batches), 1 done.
+    const recordCount   = types.filter(t => t === 'record').length;
+    const progressCount = types.filter(t => t === 'progress').length;
+    const doneCount     = types.filter(t => t === 'done').length;
+    expect(recordCount).toBe(7);
+    expect(progressCount).toBe(2);
+    expect(doneCount).toBe(1);
+
+    // Last event is always `done`.
+    expect(types[types.length - 1]).toBe('done');
+
+    // Every `progress` event has at least one `record` event before it in the
+    // same batch — i.e. records flush before progress.
+    let seenRecordSinceLastProgress = false;
+    for (const t of types) {
+      if (t === 'record')   seenRecordSinceLastProgress = true;
+      if (t === 'progress') {
+        expect(seenRecordSinceLastProgress).toBe(true);
+        seenRecordSinceLastProgress = false;
+      }
+    }
+  });
+});
+
+describe('runSync — dispatcher (Phase 1)', () => {
+  it('routes objectType=companies to the companies path and writes a companies history record', async () => {
+    await runSync({ trigger: 'scheduler', runId: 'r-dispatch-companies', objectType: 'companies' });
+    expect(mockFetchCompanies).toHaveBeenCalled();
+    expect(mockWriteHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ objectType: 'companies', mode: expect.any(String) })
+    );
+  });
+
+  it('defaults objectType to companies when omitted (D24)', async () => {
+    await runSync({ trigger: 'scheduler', runId: 'r-dispatch-default' });
+    expect(mockFetchCompanies).toHaveBeenCalled();
+    expect(mockWriteHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ objectType: 'companies' })
+    );
+  });
+
+  it('throws "not yet implemented" for objectType=deals (lands in Phase 4)', async () => {
+    await expect(
+      runSync({ trigger: 'scheduler', runId: 'r-dispatch-deals', objectType: 'deals' })
+    ).rejects.toThrow(/not yet implemented/i);
+    expect(mockFetchCompanies).not.toHaveBeenCalled();
+    expect(mockWriteHistory).not.toHaveBeenCalled();
   });
 });

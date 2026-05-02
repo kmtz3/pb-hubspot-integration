@@ -2,12 +2,14 @@ import { Router } from 'express';
 import {
   getSyncConfig,
   updateSyncConfig,
-  getFieldMappings,
-  saveFieldMappings,
-  getAccountFilter,
-  saveAccountFilter,
   getHubSpotConfig,
   getPBConfig,
+  getFieldMappingsDoc,
+  saveFieldMappings,
+  saveDealsFieldMappings,
+  getFiltersDoc,
+  saveAccountFilter,
+  saveDealsFilter,
 } from '../lib/firestore';
 import type { AppConfig, SyncConfig } from '../types/sync';
 
@@ -15,19 +17,19 @@ export const router = Router();
 
 router.get('/', async (_req, res) => {
   try {
-    const [hubspot, productboard, sync, mappings, accountFilter] = await Promise.all([
+    const [hubspot, productboard, sync, fieldMappings, filters] = await Promise.all([
       getHubSpotConfig(),
       getPBConfig(),
       getSyncConfig(),
-      getFieldMappings(),
-      getAccountFilter(),
+      getFieldMappingsDoc(),
+      getFiltersDoc(),
     ]);
     const config: AppConfig = {
       hubspot,
       productboard,
       sync,
-      fieldMappings: { mappings },
-      accountFilter,
+      fieldMappings,
+      filters,
     };
     res.json(config);
   } catch (err) {
@@ -35,8 +37,29 @@ router.get('/', async (_req, res) => {
   }
 });
 
+// Phase 1 (D16): no read-side upcasting and no write-side acceptance of the
+// old shape. The Phase 1 client + server deploy together; an old-shape body
+// indicates a stale client that has missed the wipe-and-redeploy migration.
+function detectLegacyShape(body: Partial<AppConfig> & { accountFilter?: unknown }): string | null {
+  if ('accountFilter' in body) {
+    return 'config.accountFilter is removed; send `filters.companies` instead (Phase 1 migration).';
+  }
+  if (body.fieldMappings && !('companies' in body.fieldMappings) && 'mappings' in (body.fieldMappings as object)) {
+    return 'fieldMappings.mappings is removed; send `fieldMappings.companies` instead (Phase 1 migration).';
+  }
+  if (body.sync && typeof (body.sync as unknown as Record<string, unknown>).schedule === 'string') {
+    return 'sync.schedule (enum) is replaced by sync.schedule.{companies,deals}; use `sync.legacySchedule` for the transitional accounts cadence picker (Phase 1 migration).';
+  }
+  return null;
+}
+
 router.patch('/', async (req, res) => {
-  const body = req.body as Partial<AppConfig>;
+  const body = req.body as Partial<AppConfig> & { accountFilter?: unknown };
+  const legacy = detectLegacyShape(body);
+  if (legacy) {
+    return res.status(400).json({ error: legacy });
+  }
+
   try {
     const currentSync = await getSyncConfig();
 
@@ -44,15 +67,21 @@ router.patch('/', async (req, res) => {
     // fails, we want the response to be 500 and the persisted schedule to stay
     // unchanged — otherwise a follow-up save sees scheduleChanged === false and
     // silently no-ops on the scheduler while returning 200.
+    //
+    // Phase 1 keeps the single companies scheduler job: the legacy enum fields
+    // (`legacySchedule`, `legacyScheduleTime`, …) drive cron generation. Phase 6
+    // splits this into two object-typed jobs sourced from `schedule.companies`
+    // and `schedule.deals` cron strings (D7, D19, D22, D23).
     if (body.sync) {
+      const next: SyncConfig = { ...currentSync, ...body.sync };
       const scheduleChanged =
-        body.sync.schedule !== currentSync.schedule ||
-        body.sync.scheduleTime !== currentSync.scheduleTime ||
-        body.sync.scheduleDay !== currentSync.scheduleDay ||
-        body.sync.timezone !== currentSync.timezone;
+        next.legacySchedule     !== currentSync.legacySchedule     ||
+        next.legacyScheduleTime !== currentSync.legacyScheduleTime ||
+        next.legacyScheduleDay  !== currentSync.legacyScheduleDay  ||
+        next.legacyTimezone     !== currentSync.legacyTimezone;
 
       if (scheduleChanged && process.env.NODE_ENV === 'production') {
-        await reconcileCloudScheduler({ ...currentSync, ...body.sync });
+        await reconcileCloudScheduler(next);
       } else if (scheduleChanged) {
         console.log('would update Cloud Scheduler job (dev mode — skipped)');
       }
@@ -60,8 +89,10 @@ router.patch('/', async (req, res) => {
 
     const writes: Promise<void>[] = [];
     if (body.sync) writes.push(updateSyncConfig(body.sync));
-    if (body.fieldMappings?.mappings) writes.push(saveFieldMappings(body.fieldMappings.mappings));
-    if (body.accountFilter) writes.push(saveAccountFilter(body.accountFilter));
+    if (body.fieldMappings?.companies) writes.push(saveFieldMappings(body.fieldMappings.companies));
+    if (body.fieldMappings?.deals) writes.push(saveDealsFieldMappings(body.fieldMappings.deals));
+    if (body.filters?.companies) writes.push(saveAccountFilter(body.filters.companies));
+    if (body.filters?.deals) writes.push(saveDealsFilter(body.filters.deals));
     await Promise.all(writes);
 
     res.json({ ok: true });
@@ -140,7 +171,7 @@ async function reconcileCloudScheduler(sync: SyncConfig): Promise<void> {
   const env = readSchedulerEnv();
 
   // Manual mode: pause an existing job; never auto-create one.
-  if (sync.schedule === 'manual') {
+  if (!sync.legacySchedule || sync.legacySchedule === 'manual') {
     try {
       await client.pauseJob({ name: env.jobName });
     } catch (err) {
@@ -150,7 +181,7 @@ async function reconcileCloudScheduler(sync: SyncConfig): Promise<void> {
   }
 
   const schedule = buildCronExpression(sync);
-  const timeZone = sync.timezone ?? 'America/New_York';
+  const timeZone = sync.legacyTimezone ?? 'America/New_York';
 
   try {
     await client.updateJob({
@@ -201,11 +232,11 @@ const DAY_OF_WEEK: Record<string, number> = {
 };
 
 function buildCronExpression(sync: Partial<SyncConfig>): string {
-  const [hour = '2', minute = '0'] = (sync.scheduleTime ?? '02:00').split(':');
-  switch (sync.schedule) {
+  const [hour = '2', minute = '0'] = (sync.legacyScheduleTime ?? '02:00').split(':');
+  switch (sync.legacySchedule) {
     case 'daily':   return `${minute} ${hour} * * *`;
     case 'weekly': {
-      const dow = DAY_OF_WEEK[sync.scheduleDay ?? 'Monday'] ?? 1;
+      const dow = DAY_OF_WEEK[sync.legacyScheduleDay ?? 'Monday'] ?? 1;
       return `${minute} ${hour} * * ${dow}`;
     }
     case 'hourly':  return `0 * * * *`;

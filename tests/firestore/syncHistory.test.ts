@@ -42,6 +42,8 @@ describe('syncHistory write + read', () => {
       finishedAt: '2026-05-01T02:03:00Z',
       trigger: 'ui',
       status: 'success',
+      objectType: 'companies',
+      mode: 'incremental',
       stats: { fetched: 100, created: 10, updated: 88, skipped: 2, errors: 0 },
       errors: [],
     });
@@ -51,6 +53,7 @@ describe('syncHistory write + read', () => {
     expect(run).not.toBeNull();
     expect(run!.status).toBe('success');
     expect(run!.stats.fetched).toBe(100);
+    expect(run!.objectType).toBe('companies');
   });
 
   it('returns null for unknown runId', async () => {
@@ -61,7 +64,7 @@ describe('syncHistory write + read', () => {
 
   it('paginates history ordered by startedAt desc', async () => {
     const fns = await getFirestoreFns();
-    const base = { trigger: 'scheduler' as const, status: 'success' as const, stats: { fetched: 1, created: 1, updated: 0, skipped: 0, errors: 0 }, errors: [] };
+    const base = { trigger: 'scheduler' as const, status: 'success' as const, objectType: 'companies' as const, mode: 'incremental' as const, stats: { fetched: 1, created: 1, updated: 0, skipped: 0, errors: 0 }, errors: [] };
     await fns.writeSyncHistory({ ...base, startedAt: '2026-05-01T01:00:00Z' });
     await fns.writeSyncHistory({ ...base, startedAt: '2026-05-01T03:00:00Z' });
     await fns.writeSyncHistory({ ...base, startedAt: '2026-05-01T02:00:00Z' });
@@ -73,7 +76,7 @@ describe('syncHistory write + read', () => {
 
   it('respects the limit parameter', async () => {
     const fns = await getFirestoreFns();
-    const base = { trigger: 'ui' as const, status: 'success' as const, stats: { fetched: 1, created: 0, updated: 1, skipped: 0, errors: 0 }, errors: [] };
+    const base = { trigger: 'ui' as const, status: 'success' as const, objectType: 'companies' as const, mode: 'full' as const, stats: { fetched: 1, created: 0, updated: 1, skipped: 0, errors: 0 }, errors: [] };
     for (let i = 0; i < 5; i++) {
       await fns.writeSyncHistory({ ...base, startedAt: `2026-05-0${i + 1}T00:00:00Z` });
     }

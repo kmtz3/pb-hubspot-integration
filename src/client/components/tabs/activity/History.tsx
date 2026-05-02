@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Download } from 'lucide-react';
-import { useSyncRuns } from '../../hooks/api';
-import Code from '../ui/Code';
-import type { SyncDebugLog, SyncRun, SyncRunError } from '../../../types/sync';
+import { useSyncRuns } from '../../../hooks/api';
+import Code from '../../ui/Code';
+import type { SyncDebugLog, SyncRun, SyncRunError } from '../../../../types/sync';
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 

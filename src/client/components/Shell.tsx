@@ -3,13 +3,46 @@ import { Plug, Filter, Columns, Calendar, History, Settings, BookOpen } from 'lu
 import type { Tab } from '../App';
 import { useConfig, useConnections } from '../hooks/api';
 
-const NAV_ITEMS: Array<{ id: Tab; label: string; Icon: React.ElementType }> = [
-  { id: 'connect',  label: 'Connect',         Icon: Plug      },
-  { id: 'filter',   label: 'Filter accounts', Icon: Filter    },
-  { id: 'fields',   label: 'Map fields',      Icon: Columns   },
-  { id: 'schedule', label: 'Schedule',        Icon: Calendar  },
-  { id: 'history',  label: 'History',         Icon: History   },
-  { id: 'settings', label: 'Settings',        Icon: Settings  },
+// Phase 1 sidebar groups (per plan task 11):
+//   SETUP    – shared connection + general toggles
+//   ACCOUNTS – companies sync surface (existing UX)
+//   DEALS    – deals sync surface (placeholders this phase)
+//   ACTIVITY – history, segmented in Phase 5
+type NavGroup = {
+  label: string;
+  items: Array<{ id: Tab; label: string; Icon: React.ElementType }>;
+};
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Setup',
+    items: [
+      { id: 'connect',  label: 'Connect',  Icon: Plug },
+      { id: 'settings', label: 'Settings', Icon: Settings },
+    ],
+  },
+  {
+    label: 'Accounts',
+    items: [
+      { id: 'accounts-filter',   label: 'Filter accounts', Icon: Filter   },
+      { id: 'accounts-fields',   label: 'Map fields',      Icon: Columns  },
+      { id: 'accounts-schedule', label: 'Schedule',        Icon: Calendar },
+    ],
+  },
+  {
+    label: 'Deals',
+    items: [
+      { id: 'deals-filter',   label: 'Filter deals', Icon: Filter   },
+      { id: 'deals-fields',   label: 'Map fields',   Icon: Columns  },
+      { id: 'deals-schedule', label: 'Schedule',     Icon: Calendar },
+    ],
+  },
+  {
+    label: 'Activity',
+    items: [
+      { id: 'history', label: 'History', Icon: History },
+    ],
+  },
 ];
 
 function SidebarSyncSummary() {
@@ -37,11 +70,6 @@ function SidebarSyncSummary() {
           ...(state === 'syncing' ? { animation: 'pulse 1.5s ease-in-out infinite' } : {}) }} />
         {s.label}
       </div>
-      {sync?.lastSyncAt && state !== 'syncing' && (
-        <div style={{ color: 'var(--muted-foreground)', marginTop: 4 }}>
-          {new Date(sync.lastSyncAt).toLocaleString()}
-        </div>
-      )}
       {sync?.lastSyncStats && (
         <div style={{ display: 'flex', gap: 8, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
           <span>+{sync.lastSyncStats.created}</span>
@@ -132,24 +160,28 @@ export default function Shell({ activeTab, onTabChange, children }: ShellProps) 
           width: 220, flexShrink: 0, padding: '20px 12px',
           borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted-foreground)', marginBottom: 8 }}>
-            Setup
-          </div>
-          {NAV_ITEMS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              onClick={() => onTabChange(id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '8px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                fontSize: 13, fontWeight: activeTab === id ? 600 : 400, textAlign: 'left',
-                background: activeTab === id ? 'var(--accent)' : 'transparent',
-                color: activeTab === id ? 'var(--accent-foreground)' : 'inherit',
-                marginBottom: 2,
-              }}>
-              <Icon size={15} />
-              {label}
-            </button>
+          {NAV_GROUPS.map(group => (
+            <div key={group.label} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted-foreground)', marginBottom: 6 }}>
+                {group.label}
+              </div>
+              {group.items.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => onTabChange(id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                    fontSize: 13, fontWeight: activeTab === id ? 600 : 400, textAlign: 'left',
+                    background: activeTab === id ? 'var(--accent)' : 'transparent',
+                    color: activeTab === id ? 'var(--accent-foreground)' : 'inherit',
+                    marginBottom: 2, width: '100%',
+                  }}>
+                  <Icon size={15} />
+                  {label}
+                </button>
+              ))}
+            </div>
           ))}
           <div style={{ flex: 1 }} />
           <SidebarSyncSummary />

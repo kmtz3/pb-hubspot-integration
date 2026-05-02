@@ -1,7 +1,7 @@
 import {
   schemaToToken,
   coerceFieldValue,
-  buildFieldsPayload,
+  buildCompanyFieldsPayload,
   buildPatchOperations,
   stripNullFieldValues,
 } from '../../src/sync/mapper';
@@ -76,13 +76,13 @@ describe('coerceFieldValue', () => {
     expect(coerceFieldValue('', 'date')).toBeNull());
 });
 
-describe('buildFieldsPayload', () => {
+describe('buildCompanyFieldsPayload', () => {
   it('includes enabled mappings', () => {
     const company = makeHubSpotCompany();
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'annualrevenue', pbFieldId: 'custom_arr', pbFieldType: 'number', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings);
+    const result = buildCompanyFieldsPayload(company, mappings);
     expect(result['custom_arr']).toBe(450000);
   });
 
@@ -91,7 +91,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'annualrevenue', pbFieldId: 'revenue', pbFieldType: 'number', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings, {
+    const result = buildCompanyFieldsPayload(company, mappings, {
       fieldConstraintsById: new Map([['revenue', { maxScale: 2 }]]),
     });
     expect(result['revenue']).toBe(2.56);
@@ -102,7 +102,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'annualrevenue', pbFieldId: 'revenue', pbFieldType: 'number', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings, {
+    const result = buildCompanyFieldsPayload(company, mappings, {
       fieldConstraintsById: new Map([['revenue', { maximum: 9999999999.99, maxScale: 2 }]]),
     });
     expect(result['revenue']).toBeUndefined();
@@ -114,7 +114,7 @@ describe('buildFieldsPayload', () => {
       makeFieldMapping({ hubspotProperty: 'name', pbFieldId: 'name', pbFieldType: 'text', enabled: false, locked: true }),
       makeFieldMapping({ hubspotProperty: 'domain', pbFieldId: 'domain', pbFieldType: 'text', enabled: false, locked: true }),
     ];
-    const result = buildFieldsPayload(company, mappings);
+    const result = buildCompanyFieldsPayload(company, mappings);
     expect(result['name']).toBe('Acme Corp');
     expect(result['domain']).toBe('acme.com');
   });
@@ -124,7 +124,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'annualrevenue', pbFieldId: 'custom_arr', pbFieldType: 'number', enabled: false, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings);
+    const result = buildCompanyFieldsPayload(company, mappings);
     expect(result['custom_arr']).toBeUndefined();
   });
 
@@ -133,7 +133,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'annualrevenue', pbFieldId: '', pbFieldType: 'number', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings);
+    const result = buildCompanyFieldsPayload(company, mappings);
     expect(Object.keys(result)).toHaveLength(0);
   });
 
@@ -142,7 +142,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'bad_date', pbFieldId: 'required_date', pbFieldType: 'date', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings);
+    const result = buildCompanyFieldsPayload(company, mappings);
     expect(result['required_date']).toBeNull();
   });
 
@@ -151,7 +151,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'hubspot_owner_id', pbFieldId: 'owner', pbFieldType: 'member', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings, { ownerIdToEmail: new Map() });
+    const result = buildCompanyFieldsPayload(company, mappings, { ownerIdToEmail: new Map() });
     expect(result['owner']).toBeNull();
   });
 
@@ -160,7 +160,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'industry_source', pbFieldId: 'required_industry', pbFieldType: 'text', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings, { nonClearableFieldIds: new Set(['required_industry']) });
+    const result = buildCompanyFieldsPayload(company, mappings, { nonClearableFieldIds: new Set(['required_industry']) });
     expect(result['required_industry']).toBeUndefined();
   });
 
@@ -169,7 +169,7 @@ describe('buildFieldsPayload', () => {
     const mappings = [
       makeFieldMapping({ hubspotProperty: 'hubspot_owner_id', pbFieldId: 'owner', pbFieldType: 'member', enabled: true, locked: false }),
     ];
-    const result = buildFieldsPayload(company, mappings, {
+    const result = buildCompanyFieldsPayload(company, mappings, {
       ownerIdToEmail: new Map(),
       nonClearableFieldIds: new Set(['owner']),
     });

@@ -1,4 +1,4 @@
-import type { SyncDebugLog, SyncStats, SyncTrigger, SseEmitter, SyncEvent } from '../types/sync';
+import type { SyncDebugLog, SyncStats, SyncTrigger, SseEmitter, SyncEvent, ObjectType, SyncMode } from '../types/sync';
 import type { PBFieldValuesCache } from '../types/productboard';
 import {
   getSyncConfig,
@@ -11,8 +11,8 @@ import {
 } from '../lib/firestore';
 import { fetchCompanies, fetchOwnerEmailMaps } from './hubspot';
 import * as pbClient from './productboard';
-import { buildCompanyMaps, findExistingEntity } from './dedup';
-import { buildFieldsPayload, buildPatchOperations, detectOwnerIdField, stripNullFieldValues } from './mapper';
+import { buildCompanyMaps, findExistingCompany } from './dedup';
+import { buildCompanyFieldsPayload, buildPatchOperations, detectOwnerIdField, stripNullFieldValues } from './mapper';
 import type { FieldMapping } from '../types/sync';
 import type { PBField, PBFieldValue } from '../types/productboard';
 import { ApiError } from './rateLimit';
@@ -134,13 +134,59 @@ export function requestCancel(runId: string): boolean {
   return true;
 }
 
-export async function runSync(options: {
+// ── Run options + dispatcher ────────────────────────────────────────────────
+//
+// `runSync` is the top-level entry point used by the route handler and tests.
+// It dispatches to `runCompaniesSync` or `runDealsSync` based on `objectType`,
+// which defaults to `'companies'` (D24) so existing scheduler invocations and
+// tests that pass no objectType keep working without change.
+//
+// The deals branch throws a clear `not yet implemented` error in Phase 1 —
+// the wiring lands in Phase 4. The dispatcher exists now so routes, types,
+// and tests can already discriminate on object type.
+
+export interface RunSyncOptions {
   trigger: SyncTrigger;
+  runId: string;
+  objectType?: ObjectType;
+  mode?: SyncMode;
+  /** Companies-only legacy flag — full sweep ignoring `lastSyncAt.companies`.
+   *  When `mode` is set explicitly it takes precedence. */
   fullSync?: boolean;
   sseEmitter?: SseEmitter;
-  runId: string;
-}): Promise<SyncStats> {
-  const { trigger, fullSync = trigger === 'ui', sseEmitter, runId } = options;
+  /** Backfill-mode window endpoints in epoch ms (deals, Phase 4). */
+  windowFrom?: number | null;
+  windowTo?: number | null;
+  /** Backfill-mode field selector (D21, deals, Phase 4). */
+  windowField?: 'hs_lastmodifieddate' | 'createdate';
+}
+
+export async function runSync(options: RunSyncOptions): Promise<SyncStats> {
+  const objectType: ObjectType = options.objectType ?? 'companies';
+  if (objectType === 'companies') return runCompaniesSync(options);
+  if (objectType === 'deals') return runDealsSync(options);
+  // Exhaustiveness: TS narrows to never here, but a runtime guard keeps the
+  // route layer honest if a typo slips through validation.
+  throw new Error(`runSync: unsupported objectType "${String(objectType)}"`);
+}
+
+// Phase 4 wires the deals path; this stub lets the dispatcher and routes
+// compile and ship without exposing a half-built sync.
+export async function runDealsSync(_options: RunSyncOptions): Promise<SyncStats> {
+  throw new Error('Deals sync not yet implemented (lands in Phase 4)');
+}
+
+// ── Companies sync (existing behavior, unchanged from pre-refactor) ─────────
+
+export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncStats> {
+  const { trigger, sseEmitter, runId } = options;
+  // Resolve mode: explicit `mode` wins; else fall back to the legacy
+  // `fullSync` flag (true → 'full', false/undefined → 'incremental'). UI
+  // triggers default to full so a "Sync now" click sweeps the whole filter
+  // (matches pre-refactor behavior).
+  const mode: SyncMode = options.mode
+    ?? ((options.fullSync ?? trigger === 'ui') ? 'full' : 'incremental');
+  const fullSync = mode === 'full';
   const startedAt = new Date().toISOString();
 
   activeRuns.set(runId, { cancelRequested: false });
@@ -161,10 +207,11 @@ export async function runSync(options: {
     sseEmitter?.({ type: 'done', status: 'skipped', stats, durationMs: 0 });
     await writeSyncHistory({
       startedAt, finishedAt, trigger, status: 'skipped',
+      objectType: 'companies', mode,
       stats, errors: [], skipReason: skip,
     });
     await updateSyncConfig({
-      lastSyncAt: finishedAt,
+      lastSyncAt: { companies: finishedAt },
       lastSyncStatus: 'skipped',
       lastSyncStats: stats,
       inProgress: false,
@@ -181,7 +228,7 @@ export async function runSync(options: {
     ]);
 
     const filterGroups = accountFilter.enabled ? accountFilter.filterGroups : [];
-    const lastSyncAt = fullSync ? undefined : syncConfig.lastSyncAt;
+    const lastSyncAt = fullSync ? undefined : (syncConfig.lastSyncAt?.companies ?? undefined);
     const pbFields = DRY_RUN() ? [] : await pbClient.fetchEntityConfigurations();
     const requiredPBFieldIds = nonClearableFieldIds(pbFields);
     const pbFieldConstraintsById = fieldConstraintsById(pbFields);
@@ -296,8 +343,8 @@ export async function runSync(options: {
           name: company.properties.name ?? company.id,
         };
         try {
-          const existing = findExistingEntity(company, syncConfig, companyMaps);
-          const fields = buildFieldsPayload(company, mappings, {
+          const existing = findExistingCompany(company, syncConfig, companyMaps);
+          const fields = buildCompanyFieldsPayload(company, mappings, {
             memberEmails,
             ownerIdToEmail,
             userIdToEmail,
@@ -345,7 +392,7 @@ export async function runSync(options: {
                   source: {
                     system: 'hubspot',
                     recordId: company.id,
-                    url: `https://app.hubspot.com/contacts/${syncConfig.lastSyncAt ?? ''}/company/${company.id}`,
+                    url: `https://app.hubspot.com/contacts/${syncConfig.lastSyncAt?.companies ?? ''}/company/${company.id}`,
                   },
                 },
               },
@@ -401,6 +448,8 @@ export async function runSync(options: {
       finishedAt,
       trigger,
       status,
+      objectType: 'companies',
+      mode,
       stats,
       errors,
       ...(syncConfig.debugLogging ? { debugLogs } : {}),
@@ -412,7 +461,7 @@ export async function runSync(options: {
     // becomes irrelevant the moment we set inProgress=false. The next run
     // start overwrites it. Avoids needing FieldValue.delete() plumbing.
     await updateSyncConfig({
-      lastSyncAt: finishedAt,
+      lastSyncAt: { companies: finishedAt },
       lastSyncStatus: status,
       lastSyncStats: stats,
       inProgress: false,

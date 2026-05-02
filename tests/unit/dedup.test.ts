@@ -1,4 +1,4 @@
-import { buildCompanyMaps, findExistingEntity } from '../../src/sync/dedup';
+import { buildCompanyMaps, findExistingCompany } from '../../src/sync/dedup';
 import { makeHubSpotCompany, makePBEntity, makeSyncConfig } from '../helpers/factories';
 
 describe('buildCompanyMaps', () => {
@@ -50,22 +50,22 @@ describe('buildCompanyMaps', () => {
   });
 });
 
-describe('findExistingEntity — primary path', () => {
+describe('findExistingCompany — primary path', () => {
   it('returns pbId when recordId is in the map', () => {
     const maps = buildCompanyMaps([
       makePBEntity({ id: 'pb-001', metadata: { source: { system: 'hubspot', recordId: 'hs-company-001' } } }),
     ]);
-    const result = findExistingEntity(makeHubSpotCompany(), makeSyncConfig(), maps);
+    const result = findExistingCompany(makeHubSpotCompany(), makeSyncConfig(), maps);
     expect(result).toEqual({ pbId: 'pb-001', resolvedViaFallback: false });
   });
 });
 
-describe('findExistingEntity — domain fallback', () => {
+describe('findExistingCompany — domain fallback', () => {
   it('falls back to domain when recordId misses', () => {
     const maps = buildCompanyMaps([
       makePBEntity({ id: 'pb-domain-001', fields: { name: 'Acme', domain: 'acme.com' }, metadata: { source: undefined } as any }),
     ]);
-    const result = findExistingEntity(
+    const result = findExistingCompany(
       makeHubSpotCompany(),
       makeSyncConfig({ domainFallbackEnabled: true }),
       maps
@@ -77,7 +77,7 @@ describe('findExistingEntity — domain fallback', () => {
     const maps = buildCompanyMaps([
       makePBEntity({ id: 'pb-domain-001', fields: { name: 'Acme', domain: 'acme.com' }, metadata: { source: undefined } as any }),
     ]);
-    const result = findExistingEntity(
+    const result = findExistingCompany(
       makeHubSpotCompany(),
       makeSyncConfig({ domainFallbackEnabled: false }),
       maps
@@ -90,7 +90,7 @@ describe('findExistingEntity — domain fallback', () => {
       makePBEntity({ id: 'pb-domain-001', fields: { name: 'Acme', domain: 'acme.com' }, metadata: { source: undefined } as any }),
     ]);
     const company = makeHubSpotCompany({ properties: { name: 'Acme', domain: '' } });
-    const result = findExistingEntity(
+    const result = findExistingCompany(
       company,
       makeSyncConfig({ domainFallbackEnabled: true }),
       maps
@@ -102,7 +102,7 @@ describe('findExistingEntity — domain fallback', () => {
     const maps = buildCompanyMaps([
       makePBEntity({ id: 'pb-other', fields: { name: 'Other', domain: 'other.com' }, metadata: { source: undefined } as any }),
     ]);
-    const result = findExistingEntity(
+    const result = findExistingCompany(
       makeHubSpotCompany(),
       makeSyncConfig({ domainFallbackEnabled: true }),
       maps
@@ -115,7 +115,7 @@ describe('findExistingEntity — domain fallback', () => {
       makePBEntity({ id: 'pb-domain-001', fields: { name: 'Acme', domain: 'acme.com' }, metadata: { source: undefined } as any }),
     ]);
     const company = makeHubSpotCompany({ properties: { name: 'Acme', domain: 'ACME.com' } });
-    const result = findExistingEntity(company, makeSyncConfig({ domainFallbackEnabled: true }), maps);
+    const result = findExistingCompany(company, makeSyncConfig({ domainFallbackEnabled: true }), maps);
     expect(result).toEqual({ pbId: 'pb-domain-001', resolvedViaFallback: true });
   });
 });

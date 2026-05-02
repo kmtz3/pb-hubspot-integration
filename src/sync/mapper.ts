@@ -217,7 +217,7 @@ function applyNumberConstraints(
   return rounded;
 }
 
-export function buildFieldsPayload(
+export function buildCompanyFieldsPayload(
   hsCompany: HubSpotCompany,
   mappings: FieldMapping[],
   ctx?: CoerceContext

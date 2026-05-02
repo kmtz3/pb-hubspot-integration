@@ -57,12 +57,26 @@ describe('Productboard config round-trip', () => {
 });
 
 describe('Sync config round-trip', () => {
-  it('saves and reads sync config', async () => {
+  it('saves and reads sync config (Phase 1 partitioned shape)', async () => {
     const fns = await getFirestoreFns();
-    await fns.updateSyncConfig({ schedule: 'daily', domainFallbackEnabled: false, inProgress: false });
+    await fns.updateSyncConfig({
+      schedule: { companies: '0 2 * * *', deals: null },
+      domainFallbackEnabled: false,
+      inProgress: false,
+    });
     const config = await fns.getSyncConfig();
-    expect(config.schedule).toBe('daily');
+    expect(config.schedule.companies).toBe('0 2 * * *');
+    expect(config.schedule.deals).toBeNull();
     expect(config.domainFallbackEnabled).toBe(false);
+  });
+
+  it('preserves the unset partition under partial deep-merge', async () => {
+    const fns = await getFirestoreFns();
+    await fns.updateSyncConfig({ schedule: { companies: '0 2 * * *', deals: '*/15 * * * *' } });
+    await fns.updateSyncConfig({ schedule: { companies: '0 5 * * *' } });
+    const config = await fns.getSyncConfig();
+    expect(config.schedule.companies).toBe('0 5 * * *');
+    expect(config.schedule.deals).toBe('*/15 * * * *');
   });
 });
 

@@ -5,6 +5,7 @@ import { fetchEntityConfigurations } from '../sync/productboard';
 import type { HubSpotProperty } from '../types/hubspot';
 import type { PBField } from '../types/productboard';
 import type { HubSpotFilter } from '../types/hubspot';
+import type { ObjectType } from '../types/sync';
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -12,8 +13,21 @@ export const router = Router();
 export const hsPropertiesRouter = Router();
 export const pbFieldsRouter = Router();
 
-// POST /api/filters/preview
+// D24: `?objectType=` is optional and defaults to `companies` so existing
+// clients that don't yet pass it keep working without change. Phase 2 wires
+// the deals branch in `properties` and `preview`.
+function readObjectType(raw: unknown): ObjectType {
+  if (raw === 'deals' || raw === 'companies') return raw;
+  return 'companies';
+}
+
+// POST /api/filters/preview[?objectType=companies|deals]
 router.post('/preview', async (req, res) => {
+  const objectType = readObjectType(req.query.objectType);
+  if (objectType === 'deals') {
+    return res.status(501).json({ error: 'deals filter preview lands in Phase 2' });
+  }
+
   const { filters } = req.body as { filters?: HubSpotFilter[] };
   if (!Array.isArray(filters)) return res.status(400).json({ error: 'filters array required' });
 
@@ -43,8 +57,13 @@ router.post('/preview', async (req, res) => {
   }
 });
 
-// GET /api/hubspot/properties[?refresh=true]
+// GET /api/hubspot/properties[?refresh=true&objectType=companies|deals]
 hsPropertiesRouter.get('/properties', async (req, res) => {
+  const objectType = readObjectType(req.query.objectType);
+  if (objectType === 'deals') {
+    return res.status(501).json({ error: 'deals properties endpoint lands in Phase 2' });
+  }
+
   try {
     const bypassCache = req.query.refresh === 'true';
     if (!bypassCache) {

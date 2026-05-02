@@ -1,6 +1,6 @@
 import type { HubSpotCompany } from '../types/hubspot';
 import type { SyncConfig } from '../types/sync';
-import type { PBEntity } from '../types/productboard';
+import type { PBEntity, ProductboardNote } from '../types/productboard';
 
 // PB's v2 search endpoint (`POST /v2/entities/search`) does not yet honor
 // `filter.metadata.source.recordId` — the docs flag the metadata filter as
@@ -45,7 +45,7 @@ export function buildCompanyMaps(companies: PBEntity[]): CompanyMaps {
   return { byRecordId, byDomain };
 }
 
-export function findExistingEntity(
+export function findExistingCompany(
   hsCompany: HubSpotCompany,
   config: Pick<SyncConfig, 'domainFallbackEnabled'>,
   maps: CompanyMaps
@@ -61,4 +61,34 @@ export function findExistingEntity(
   if (fallback) return { pbId: fallback, resolvedViaFallback: true };
 
   return null;
+}
+
+// ── Deal-note dedup (Phase 1 stubs; full implementation in Phase 4) ──────────
+//
+// recordId format (live-tested 2026-05-02):
+//   single mode:  `deal-<dealId>`
+//   multi mode:   `deal-<dealId>::company-<companyId>`
+// `::` roundtrips verbatim through PB POST/GET and the metadata filter.
+//
+// `buildDealNoteMaps` walks every hubspot-source note once (paginated via
+// `listHubspotDealNotes` in productboard.ts, Phase 3) and builds a nested
+// dealId → (companyKey | null) → note map. `findExistingDealNote` is the
+// per-deal lookup the engine calls per row.
+
+export type DealNoteIndex = Map<string, Map<string | null, ProductboardNote>>;
+
+export function buildDealNoteMaps(_notes: ProductboardNote[]): DealNoteIndex {
+  // Implemented in Phase 4 — parses each note's recordId, splits on `::`,
+  // strips the `deal-` / `company-` prefixes, and inserts into the nested
+  // map with `null` as the inner key for single-mode notes.
+  throw new Error('buildDealNoteMaps not yet implemented (lands in Phase 4)');
+}
+
+export function findExistingDealNote(
+  _dealId: string,
+  _companyKey: string | null,
+  _index: DealNoteIndex
+): ProductboardNote | undefined {
+  // Implemented in Phase 4 — `index.get(dealId)?.get(companyKey)`.
+  throw new Error('findExistingDealNote not yet implemented (lands in Phase 4)');
 }

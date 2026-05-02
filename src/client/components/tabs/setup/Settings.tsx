@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { useConfig, useSaveConfig } from '../../hooks/api';
-import InlineAlert from '../ui/InlineAlert';
-import Code from '../ui/Code';
-import type { SyncConfig } from '../../../types/sync';
+import { useConfig, useSaveConfig } from '../../../hooks/api';
+import InlineAlert from '../../ui/InlineAlert';
+import Code from '../../ui/Code';
+import type { SyncConfig } from '../../../../types/sync';
 
 type SettingsForm = Pick<SyncConfig,
   | 'domainFallbackEnabled'

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { X, Plus, CheckCircle } from 'lucide-react';
-import { useConfig, useSaveConfig, useHSProperties, useFilterPreview } from '../../hooks/api';
-import { OPERATORS_BY_TYPE, OPERATOR_LABELS } from '../../constants/operators';
-import type { HubSpotFilter } from '../../../types/hubspot';
-import InlineAlert from '../ui/InlineAlert';
+import { useConfig, useSaveConfig, useHSProperties, useFilterPreview } from '../../../hooks/api';
+import { OPERATORS_BY_TYPE, OPERATOR_LABELS } from '../../../constants/operators';
+import type { HubSpotFilter } from '../../../../types/hubspot';
+import InlineAlert from '../../ui/InlineAlert';
 
 interface FilterFormValues {
   enabled: boolean;
@@ -28,14 +28,14 @@ export default function FilterAccounts() {
 
   const initialized = useRef(false);
   useEffect(() => {
-    if (config?.accountFilter && hsProps && !initialized.current) {
+    if (config?.filters?.companies && hsProps && !initialized.current) {
       initialized.current = true;
       reset({
-        enabled: config.accountFilter.enabled,
-        filters: config.accountFilter.filterGroups[0]?.filters ?? [],
+        enabled: config.filters.companies.enabled,
+        filters: config.filters.companies.filterGroups[0]?.filters ?? [],
       });
     }
-  }, [config?.accountFilter, hsProps, reset]);
+  }, [config?.filters?.companies, hsProps, reset]);
 
   const { fields, append, remove } = useFieldArray({ control, name: 'filters' });
   const currentFilters = watch('filters');
@@ -63,11 +63,16 @@ export default function FilterAccounts() {
   }, [hsProps]);
 
   const onSave = handleSubmit(async (values) => {
+    // Phase 1: filters doc is partitioned per object type (D24). Saving only
+    // the `companies` partition leaves the `deals` partition untouched on the
+    // server (route does a per-key save).
     await saveConfig.mutateAsync({
-      accountFilter: {
-        enabled: values.enabled,
-        filterGroups: [{ filters: values.filters }],
-      },
+      filters: {
+        companies: {
+          enabled: values.enabled,
+          filterGroups: [{ filters: values.filters }],
+        },
+      } as never,
     });
   });
 

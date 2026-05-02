@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { runSync, requestCancel } from '../sync/engine';
 import { getSyncConfig, getSyncHistory, getSyncRun, updateSyncConfig } from '../lib/firestore';
-import type { SseEmitter, SyncEvent } from '../types/sync';
+import type { ObjectType, SseEmitter, SyncEvent, SyncMode } from '../types/sync';
 
 export const router = Router();
 
@@ -16,8 +16,34 @@ const sseEmitters = new Map<string, SseEmitter>();
 // legitimate long-running case being preempted.
 const STALE_LOCK_MS = 30 * 60 * 1000;
 
+interface SyncRunBody {
+  trigger?: 'ui' | 'scheduler';
+  // D24 — `objectType` is optional and defaults to `companies`, so existing
+  // scheduler invocations and UI clients that don't yet send it keep working.
+  objectType?: ObjectType;
+  // Defaults to `incremental`. UI "Sync now" still produces a full sweep —
+  // the engine maps `trigger === 'ui'` + no explicit mode to `'full'`.
+  mode?: SyncMode;
+  // Backfill window (deals, Phase 4). Ignored on companies runs.
+  from?: number;
+  to?: number;
+  windowField?: 'hs_lastmodifieddate' | 'createdate';
+}
+
+function readObjectType(raw: unknown): ObjectType {
+  return raw === 'deals' || raw === 'companies' ? raw : 'companies';
+}
+
+function readMode(raw: unknown): SyncMode | undefined {
+  return raw === 'incremental' || raw === 'backfill' || raw === 'full' ? raw : undefined;
+}
+
 router.post('/run', async (req, res) => {
   try {
+    const body = (req.body ?? {}) as SyncRunBody;
+    const objectType = readObjectType(body.objectType);
+    const mode = readMode(body.mode);
+
     const syncConfig = await getSyncConfig();
     if (syncConfig.inProgress) {
       const startedAt = syncConfig.inProgressStartedAt
@@ -32,10 +58,20 @@ router.post('/run', async (req, res) => {
       );
     }
 
-    const { trigger = 'ui' } = req.body as { trigger?: 'ui' | 'scheduler' };
+    const trigger = body.trigger ?? 'ui';
     const runId = randomUUID();
 
     await updateSyncConfig({ inProgress: true, inProgressStartedAt: new Date().toISOString() });
+
+    const runOpts = {
+      trigger,
+      runId,
+      objectType,
+      ...(mode ? { mode } : {}),
+      ...(body.from !== undefined ? { windowFrom: body.from } : {}),
+      ...(body.to !== undefined ? { windowTo: body.to } : {}),
+      ...(body.windowField ? { windowField: body.windowField } : {}),
+    };
 
     // Scheduler trigger: block until the sync completes. Cloud Run keeps the
     // instance alive while a request is open, so awaiting here prevents the
@@ -45,7 +81,7 @@ router.post('/run', async (req, res) => {
     // duration; Cloud Run's 3600s request timeout is the upper bound.
     if (trigger === 'scheduler') {
       try {
-        await runSync({ trigger, runId });
+        await runSync(runOpts);
         return res.json({ runId, completed: true });
       } catch (err) {
         console.error(`Scheduler sync ${runId} failed:`, err);
@@ -64,7 +100,7 @@ router.post('/run', async (req, res) => {
 
     setImmediate(async () => {
       try {
-        await runSync({ trigger, runId, sseEmitter: emitter });
+        await runSync({ ...runOpts, sseEmitter: emitter });
       } catch (err) {
         console.error(`Sync run ${runId} failed:`, err);
       } finally {

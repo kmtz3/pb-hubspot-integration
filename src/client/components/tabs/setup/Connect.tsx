@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { CheckCircle, Unplug, RefreshCw } from 'lucide-react';
-import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnect, useTestConnection } from '../../hooks/api';
-import type { HubSpotScopeCheck } from '../../hooks/api';
-import type { HubSpotConfig, ProductboardConfig } from '../../../types/sync';
+import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnect, useTestConnection } from '../../../hooks/api';
+import type { HubSpotScopeCheck } from '../../../hooks/api';
+import type { HubSpotConfig, ProductboardConfig } from '../../../../types/sync';
 
 function ConnectionCard({
   system,

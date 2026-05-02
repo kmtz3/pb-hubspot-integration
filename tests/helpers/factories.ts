@@ -53,11 +53,15 @@ export function makeFieldMapping(overrides: Partial<FieldMapping> = {}): FieldMa
 
 export function makeSyncConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
   return {
-    schedule: 'daily',
-    scheduleTime: '02:00',
-    timezone: 'America/New_York',
-    domainFallbackEnabled: true,
-    inProgress: false,
+    schedule:               { companies: null, deals: null },
+    lastSyncAt:             { companies: null, deals: null },
+    multiCompanyDealNotes:  false,
+    forceContentUpdates:    false,
+    domainFallbackEnabled:  true,
+    inProgress:             false,
+    legacySchedule:         'daily',
+    legacyScheduleTime:     '02:00',
+    legacyTimezone:         'America/New_York',
     ...overrides,
   };
 }
@@ -79,6 +83,8 @@ export function makeSyncRun(overrides: Partial<SyncRun> = {}): SyncRun {
     finishedAt: '2026-05-01T02:03:42Z',
     trigger: 'ui',
     status: 'success',
+    objectType: 'companies',
+    mode: 'incremental',
     stats: { fetched: 10, created: 2, updated: 7, skipped: 1, errors: 0 },
     errors: [],
     ...overrides,

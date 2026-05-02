@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trash2, Lock, Plus, CheckCircle, RefreshCw } from 'lucide-react';
-import { useConfig, useSaveConfig, useHSProperties, usePBFields } from '../../hooks/api';
-import type { FieldMapping } from '../../../types/sync';
-import type { PBFieldType } from '../../../types/productboard';
+import { useConfig, useSaveConfig, useHSProperties, usePBFields } from '../../../hooks/api';
+import type { FieldMapping } from '../../../../types/sync';
+import type { PBFieldType } from '../../../../types/productboard';
 
 // Maps an HS property to the default PB destination type when the user picks
 // the HS source first. Routes textarea / html / richtext sources to PB
@@ -192,10 +192,10 @@ function groupByType<T>(
   return ordered;
 }
 
-import Badge from '../ui/Badge';
-import Code from '../ui/Code';
-import InlineAlert from '../ui/InlineAlert';
-import SearchableSelect from '../ui/SearchableSelect';
+import Badge from '../../ui/Badge';
+import Code from '../../ui/Code';
+import InlineAlert from '../../ui/InlineAlert';
+import SearchableSelect from '../../ui/SearchableSelect';
 
 interface MappingFormValues {
   mappings: FieldMapping[];
@@ -276,7 +276,7 @@ export default function MapFields() {
   };
 
   const { control, watch, reset, handleSubmit, setValue } = useForm<MappingFormValues>({
-    defaultValues: { mappings: config?.fieldMappings.mappings ?? [] },
+    defaultValues: { mappings: config?.fieldMappings?.companies ?? [] },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'mappings' });
@@ -294,9 +294,9 @@ export default function MapFields() {
   const initializedRef = useRef(false);
   useEffect(() => {
     if (initializedRef.current) return;
-    if (!config?.fieldMappings.mappings) return;
+    if (!config?.fieldMappings?.companies) return;
     if (!pbFields) return;
-    const healed = config.fieldMappings.mappings.map((m: any) => {
+    const healed = config.fieldMappings.companies.map((m: any) => {
       if (!m.pbFieldId) return m;
       const pbField = pbFields.find((f: any) => f.id === m.pbFieldId);
       if (!pbField || pbField.type === m.pbFieldType) return m;
@@ -338,7 +338,12 @@ export default function MapFields() {
   );
 
   const onSave = handleSubmit(async (values) => {
-    await saveConfig.mutateAsync({ fieldMappings: { mappings: values.mappings } });
+    // Phase 1: fieldMappings doc is partitioned per object type. Only the
+    // companies partition is sent here — the route preserves deals on partial
+    // saves.
+    await saveConfig.mutateAsync({
+      fieldMappings: { companies: values.mappings } as never,
+    });
   });
 
   const onReset = () => {
