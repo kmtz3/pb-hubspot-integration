@@ -67,13 +67,15 @@ You need three credentials before deploying. Save them somewhere temporary.
 
 ### 3b. HubSpot service-key token
 
-1. In HubSpot, go to **Settings → Integrations → Private Apps**.
-2. Click **Create a private app**, name it `pb-hubspot-sync`.
-3. On the **Scopes** tab, grant **all three** of:
+HubSpot Service Keys are the recommended path for server-to-server integrations: account-owned (not tied to an individual user) and creatable in the UI without spinning up a private app.
+
+1. In HubSpot, go to **Development → Keys → Service Keys** and click **Create service key** (top right). Requires Super Admin or Developer tools permission.
+2. Name it `pb-hubspot-sync`.
+3. Click **Add new scope** and grant **all three** of:
    - `crm.objects.companies.read` – read company records (core sync source)
    - `crm.schemas.companies.read` – read company property metadata for field mapping
    - `crm.objects.owners.read` – resolve owner IDs to emails for PB member fields
-4. Click **Create app** and copy the access token.
+4. Click **Create**, confirm, and copy the access token.
 
 > Missing `crm.objects.owners.read` is the most common deployment issue. Sync will run but any mapping from a HubSpot owner-id property to a Productboard member field will be skipped with a warning. The Connect tab in the UI probes all three scopes on save and warns you visibly.
 

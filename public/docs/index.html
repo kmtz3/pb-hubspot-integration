@@ -321,7 +321,7 @@
   <!-- Main content -->
   <main>
     <div class="breadcrumb">HubSpot Productboard Integration · Documentation</div>
-    <h1>HubSpot Productboard Integration <span class="updated-badge">v1.0</span></h1>
+    <h1>HubSpot Productboard Integration <span class="updated-badge">v1.0.19</span></h1>
     <p class="lead">
       Keep your Productboard account data in sync with HubSpot — automatically surface customer segments, deal values, and account details without leaving your product tool.
     </p>
@@ -373,8 +373,8 @@
       <thead><tr><th>Requirement</th><th>Details</th></tr></thead>
       <tbody>
         <tr>
-          <td><strong>Productboard API key</strong></td>
-          <td>A Productboard account with API access enabled. Generate a key at <em>Settings → API &amp; integrations → API keys</em>. Requires Admin role.</td>
+          <td><strong>Productboard API token</strong></td>
+          <td>A Productboard account with API access enabled. Generate a token at <em>Settings → Integrations → Public API</em>. Requires Admin role.</td>
         </tr>
         <tr>
           <td><strong>HubSpot service key token</strong></td>
@@ -413,14 +413,14 @@
         <div class="step-num">2</div>
         <div class="step-body">
           <strong>Connect Productboard</strong>
-          Go to the <em>Connect</em> tab. Paste your Productboard API key and click <em>Verify</em>. The app will confirm your workspace name.
+          Go to the <em>Connect</em> tab. Paste your Productboard API token and click <em>Connect</em>. The app will confirm your workspace name.
         </div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-body">
           <strong>Connect HubSpot</strong>
-          Still on the <em>Connect</em> tab, paste your HubSpot service key token and click <em>Verify</em>. The portal ID and account name will appear when the token is valid.
+          Still on the <em>Connect</em> tab, paste your HubSpot service key token and click <em>Connect</em>. The portal ID and hub name will appear when the token is valid, along with a per-scope check confirming each required scope is granted.
         </div>
       </div>
       <div class="step">
@@ -449,18 +449,18 @@
     <!-- ──────────────────────────────────── CONNECT ── -->
     <h2 id="connect">Connect accounts</h2>
 
-    <h3>Productboard API key</h3>
-    <p>To generate a Productboard API key:</p>
+    <h3>Productboard API token</h3>
+    <p>To generate a Productboard API token:</p>
     <ol class="sub-steps">
-      <li>In Productboard, go to <em>Settings → API &amp; integrations → API keys</em>.</li>
-      <li>Click <em>Generate new key</em>. Give it a descriptive name like <code>HubSpot sync</code>.</li>
-      <li>Copy the key immediately — it is shown only once.</li>
+      <li>In Productboard, go to <em>Settings → Integrations → Public API</em>.</li>
+      <li>Click <em>Add New Public API Token</em>. Give it a descriptive name like <code>HubSpot sync</code>.</li>
+      <li>Copy the token immediately — it is shown only once.</li>
     </ol>
 
     <div class="callout info">
       <span class="callout-icon">ℹ</span>
       <div class="callout-body">
-        The Productboard API key is scoped to the user who generated it. If that user is deactivated, the key stops working. Use a service account if your organisation has one.
+        The Productboard API token is scoped to the user who generated it. If that user is deactivated, the token stops working. Use a service account if your organisation has one. The token is encrypted and stored as a Secret Manager version (<code>productboard-token</code>) — never written to Firestore or the browser.
       </div>
     </div>
 
@@ -473,25 +473,34 @@
       <li>Click <em>Create</em> and confirm, then copy the generated token.</li>
     </ol>
 
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">
+        The Connect tab probes each scope when you save the token and on every <em>Test connection</em> run, and reports per-scope status (✓ granted / ✗ missing). The HubSpot token is encrypted and stored as a Secret Manager version (<code>hubspot-token</code>).
+      </div>
+    </div>
+
     <!-- ──────────────────────────────── FILTER ACCOUNTS ── -->
     <h2 id="filter">Filter accounts</h2>
     <p>
       By default the sync processes every company in your HubSpot portal. Use filters to limit scope — useful for large portals or when you only want to sync a specific customer segment (e.g., only Enterprise accounts with an active deal).
     </p>
 
-    <h3>Filter types</h3>
+    <h3>Operators by property type</h3>
+    <p>Available operators are filtered to match the type of the HubSpot property you pick.</p>
     <table>
-      <thead><tr><th>Filter type</th><th>Example use</th></tr></thead>
+      <thead><tr><th>Property type</th><th>Operators</th></tr></thead>
       <tbody>
-        <tr><td><strong>Property equals</strong></td><td>Lifecycle stage = <code>customer</code></td></tr>
-        <tr><td><strong>Property contains</strong></td><td>Industry contains <code>Software</code></td></tr>
-        <tr><td><strong>Property is known / unknown</strong></td><td>Annual revenue is known</td></tr>
-        <tr><td><strong>Property greater / less than</strong></td><td>Number of employees &gt; 50</td></tr>
+        <tr><td><strong>Text</strong></td><td>is equal to, is not equal to, contains, does not contain, is known, is unknown</td></tr>
+        <tr><td><strong>Number</strong></td><td>=, ≠, &lt;, ≤, &gt;, ≥, between</td></tr>
+        <tr><td><strong>Dropdown (enumeration)</strong></td><td>is equal to, is not equal to, is any of, is none of</td></tr>
+        <tr><td><strong>Boolean</strong></td><td>is equal to, is not equal to</td></tr>
+        <tr><td><strong>Date / datetime</strong></td><td>&lt;, ≤, &gt;, ≥, between</td></tr>
       </tbody>
     </table>
 
     <p>
-      Multiple filters are combined with <strong>AND</strong> — a company must match all active filters to be included.
+      Multiple conditions are combined with <strong>AND</strong> — a company must match every active condition to be included. Maximum 18 conditions per filter.
     </p>
 
     <div class="callout info">
@@ -508,39 +517,43 @@
       Field mapping controls which HubSpot company properties are written into which Productboard fields. Any HubSpot property that exists in your portal can be mapped.
     </p>
 
-    <h3>Built-in mappings</h3>
-    <table>
-      <thead><tr><th>HubSpot property</th><th>Productboard field</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><span class="pill">name</span></td><td>Company name</td><td>Required. Used as the display name in Productboard.</td></tr>
-        <tr><td><span class="pill">domain</span></td><td>Domain</td><td>Also used for deduplication matching.</td></tr>
-        <tr><td><span class="pill">hs_object_id</span></td><td>External ID</td><td>Always synced automatically — do not remove.</td></tr>
-      </tbody>
-    </table>
+    <h3>Locked mappings</h3>
+    <p>
+      <code>name</code> and <code>domain</code> are locked — they always sync and cannot be disabled. The HubSpot company ID is also written to Productboard as the integration source ID (<code>metadata.source.recordId</code>) automatically and is used for deduplication on every subsequent run.
+    </p>
 
     <h3>Custom field mappings</h3>
     <p>
-      Any HubSpot company property can be mapped to a Productboard custom field. The <em>Map fields</em> tab shows all available HubSpot properties on the left and all configured Productboard custom fields on the right. Drag a line between them (or use the dropdowns) to create a mapping.
+      Any HubSpot company property (built-in or custom) can be mapped to a Productboard company field. The <em>Map fields</em> tab pairs HubSpot properties (left) with Productboard fields (right) via dropdowns. Available pairings are filtered by type compatibility, and a ⚠ <em>Type mismatch</em> badge appears if an old config contains an incompatible pair.
     </p>
 
     <h4>Supported field types</h4>
     <table>
-      <thead><tr><th>HubSpot type</th><th>Productboard type</th><th>Notes</th></tr></thead>
+      <thead><tr><th>HubSpot type</th><th>Productboard target</th><th>Notes</th></tr></thead>
       <tbody>
-        <tr><td>Single-line text</td><td>Text</td><td></td></tr>
-        <tr><td>Number</td><td>Number</td><td>Decimal precision is preserved.</td></tr>
-        <tr><td>Dropdown / Enumeration</td><td>Dropdown</td><td>Option labels are mapped by value, not internal key.</td></tr>
-        <tr><td>Date</td><td>Date</td><td>Converted to ISO 8601.</td></tr>
-        <tr><td>Checkbox (boolean)</td><td>Text (<code>true</code>/<code>false</code>)</td><td>Productboard has no native boolean field type.</td></tr>
-        <tr><td>Multi-select</td><td>Text (comma-separated)</td><td></td></tr>
+        <tr><td>Single-line text</td><td>Text · Member · Multi-member</td><td>Text → Member only when the property name implies email content (e.g. <code>email</code>).</td></tr>
+        <tr><td>Long text / HTML / rich text</td><td>Description (rich text)</td><td>Sanitized as HTML — a "Sanitized as HTML" badge appears on the mapping row.</td></tr>
+        <tr><td>Number</td><td>Number · Text</td><td>Rounded to the destination field's <code>maxScale</code> (default 2) and validated against PB min/max constraints.</td></tr>
+        <tr><td>Dropdown / Enumeration (single)</td><td>Select · Text · Boolean · Member</td><td>Member target requires an HS owner-id source (e.g. <code>hubspot_owner_id</code>) — IDs are resolved to emails at sync time.</td></tr>
+        <tr><td>Multi-select / Checkbox enum</td><td>Multi-select · Text · Multi-member</td><td>Multi-member target requires an HS owner-id source.</td></tr>
+        <tr><td>Boolean</td><td>Boolean · Text · Select</td><td></td></tr>
+        <tr><td>Date / datetime</td><td>Date · Text</td><td>Normalized to <code>YYYY-MM-DD</code> in UTC.</td></tr>
       </tbody>
     </table>
+
+    <div class="callout success">
+      <span class="callout-icon">✓</span>
+      <div class="callout-body">
+        <strong>Auto-provisioning of select values</strong>
+        For Productboard <em>Select</em> and <em>Multi-select</em> fields, the sync engine creates missing option values on the fly. If a HubSpot enumeration value isn't yet in the destination's option list, the engine adds it before writing the company. A "Auto-provisions values" badge appears on these mappings.
+      </div>
+    </div>
 
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
       <div class="callout-body">
         <strong>Custom fields must exist first</strong>
-        Create any custom fields in Productboard (<em>Settings → Custom fields</em>) before mapping. The sync engine will not create them automatically.
+        Create custom fields in Productboard (<em>Settings → Custom fields</em>) before mapping. The sync engine writes values into existing fields — it does not create new fields, only new option values within existing select / multi-select fields.
       </div>
     </div>
 
@@ -550,48 +563,69 @@
       Scheduled syncs run automatically in the background using Google Cloud Scheduler. You do not need to keep the browser open.
     </p>
 
-    <h3>Available schedules</h3>
+    <h3>Available cadences</h3>
     <table>
-      <thead><tr><th>Preset</th><th>Cron expression</th><th>Recommended for</th></tr></thead>
+      <thead><tr><th>Preset</th><th>What it runs</th><th>Recommended for</th></tr></thead>
       <tbody>
-        <tr><td>Every hour</td><td><code>0 * * * *</code></td><td>High-velocity sales motion; frequent deal updates</td></tr>
-        <tr><td>Every 6 hours</td><td><code>0 */6 * * *</code></td><td>Most teams — good balance of freshness and rate-limit headroom</td></tr>
-        <tr><td>Daily at midnight</td><td><code>0 0 * * *</code></td><td>Low-volume portals or teams that only need daily snapshots</td></tr>
-        <tr><td>Custom</td><td>Any valid cron</td><td>Special requirements</td></tr>
+        <tr><td>Manual only</td><td>Runs only when you click <em>Sync now</em>. No scheduled jobs.</td><td>Initial setup, audits, ad-hoc refreshes.</td></tr>
+        <tr><td>Weekly</td><td>Once per week, on the day and time you pick.</td><td>Stable source data, low-change portals.</td></tr>
+        <tr><td>Daily</td><td>Once per day at the time you pick (default 02:00).</td><td><strong>Recommended.</strong> Most teams.</td></tr>
+        <tr><td>Hourly</td><td>Top of every hour.</td><td>High-velocity sales motion; heavier API usage.</td></tr>
+        <tr><td>Every 15 minutes</td><td>Four times per hour.</td><td>Near real-time. Use only with strict account filters.</td></tr>
       </tbody>
     </table>
 
     <div class="callout info">
       <span class="callout-icon">ℹ</span>
       <div class="callout-body">
-        Scheduled syncs run in UTC. If you set "Daily at midnight", that's 00:00 UTC — adjust for your timezone.
+        For Daily and Weekly, you also pick the time-of-day and a timezone (default <code>America/New_York</code>). The Schedule tab shows the next scheduled fire time as an absolute timestamp in your browser timezone plus a relative countdown.
+      </div>
+    </div>
+
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body">
+        <strong>Scheduled runs are incremental</strong>
+        Scheduled syncs only re-process companies modified since the previous successful run (delta sync). Manual <em>Sync now</em> runs always do a full sweep, regardless of the last-modified window.
       </div>
     </div>
 
     <h3>Manual sync</h3>
     <p>
-      To run a one-off sync at any time, go to the <em>Schedule</em> tab and click <em>Sync now</em>. A live progress feed shows created, updated, and error counts per batch.
+      Click <em>Sync now</em> on the Schedule tab to run a one-off sync at any time. A live progress card streams via Server-Sent Events and shows fetched, created, updated, skipped, and error counts in real time. Click <em>Cancel</em> in the card to stop after the current batch finishes.
     </p>
 
     <!-- ──────────────────────────────── HISTORY ── -->
     <h2 id="history">Sync history</h2>
     <p>
-      The <em>History</em> tab shows a log of every sync run, including start time, duration, outcome, and record-level stats.
+      The <em>History</em> tab shows every sync run with start time, trigger, duration, stats, and status. Filter by date range (7 / 30 / 90 days / all time), status, and trigger (Manual vs Scheduled). Click any row to expand per-record errors and, if Debug logging is enabled, the attempted Productboard payload and full API error response.
     </p>
 
+    <h3>Status values</h3>
     <table>
-      <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+      <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
       <tbody>
         <tr><td><span class="tag green">Success</span></td><td>All records processed without errors.</td></tr>
         <tr><td><span class="tag yellow">Partial</span></td><td>Some records failed — others were written. Expand the row to see which.</td></tr>
-        <tr><td><span class="tag red">Failed</span></td><td>The sync aborted before completing. Usually an auth or network issue.</td></tr>
-        <tr><td><strong>Created</strong></td><td>Net-new companies added to Productboard.</td></tr>
-        <tr><td><strong>Updated</strong></td><td>Existing companies with one or more field changes applied.</td></tr>
-        <tr><td><strong>Skipped</strong></td><td>Companies where nothing changed since the last sync — no write issued.</td></tr>
+        <tr><td><span class="tag red">Failed</span></td><td>The sync aborted before completing, or every record errored. Usually an auth or network issue.</td></tr>
+        <tr><td><span class="tag blue">Running</span></td><td>Sync is currently in flight.</td></tr>
+        <tr><td><strong>Skipped</strong></td><td>The run did not execute. Most common reason: HubSpot or Productboard is currently disconnected — the run will resume cleanly on the next tick after you reconnect. The skip reason is shown when the row is expanded.</td></tr>
       </tbody>
     </table>
 
-    <p>Use the <em>Download CSV</em> button to export the full history log for auditing.</p>
+    <h3>Stats columns</h3>
+    <table>
+      <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Fetched</strong></td><td>Companies returned by HubSpot after the account filter and incremental window are applied.</td></tr>
+        <tr><td><strong>Created</strong></td><td>Net-new companies added to Productboard.</td></tr>
+        <tr><td><strong>Updated</strong></td><td>Existing companies whose fields were patched.</td></tr>
+        <tr><td><strong>Skipped</strong></td><td>Records that were not written because <code>DRY_RUN</code> mode is enabled. In normal operation this stays at 0.</td></tr>
+        <tr><td><strong>Errors</strong></td><td>Records that failed — expand the row to see HubSpot ID and error detail per record.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Use the <em>Export CSV</em> button to download the filtered history as <code>sync-history-YYYY-MM-DD.csv</code> for auditing.</p>
 
     <!-- ──────────────────────────────── RATE LIMITS ── -->
     <h2 id="rate-limits">Rate limits</h2>
@@ -602,23 +636,23 @@
         <tr>
           <td>Productboard</td>
           <td>300 requests / minute</td>
-          <td>Token-bucket limiter — requests queue automatically when approaching the ceiling.</td>
+          <td>The engine reads the remaining-quota headers HubSpot and Productboard return on each response and self-throttles before the bucket runs out.</td>
         </tr>
         <tr>
           <td>HubSpot (free)</td>
           <td>100 requests / 10 s</td>
-          <td>Same token-bucket, tuned to the free tier limit. Set your tier in <em>Settings</em>.</td>
+          <td>Detected automatically from the <code>X-HubSpot-RateLimit-*</code> response headers — no manual tier setting required.</td>
         </tr>
         <tr>
           <td>HubSpot (paid)</td>
           <td>150 requests / 10 s</td>
-          <td>Configure your HubSpot tier in <em>Settings → Advanced</em> to use the higher limit.</td>
+          <td>Same auto-detection. Higher tiers will be picked up the moment HubSpot reports the larger bucket.</td>
         </tr>
       </tbody>
     </table>
 
     <p>
-      If a sync run errors with <code>429 Too Many Requests</code>, the engine backs off with exponential backoff and retries automatically. You should not need to intervene.
+      If a sync errors with <code>429 Too Many Requests</code>, the engine retries with exponential backoff. You should not need to intervene. To soften load on a very large portal, lower the <code>SYNC_CONCURRENCY</code> environment variable on the Cloud Run service (default <code>5</code>; range 1–25).
     </p>
 
     <!-- ──────────────────────────────── FIELD REFERENCE ── -->
@@ -694,7 +728,7 @@
         <tr>
           <td><code>429 Too Many Requests</code></td>
           <td>Rate limit hit — usually only on very large portals.</td>
-          <td>The engine retries automatically. If it persists, reduce <code>SYNC_CONCURRENCY</code> in <em>Settings → Advanced</em>.</td>
+          <td>The engine retries automatically with exponential backoff. If it persists, reduce the <code>SYNC_CONCURRENCY</code> environment variable on the Cloud Run service (default <code>5</code>) and redeploy.</td>
         </tr>
         <tr>
           <td>Partial sync — some records failed</td>
@@ -706,9 +740,10 @@
 
     <h3>Scheduled sync not running</h3>
     <ol class="sub-steps">
-      <li>Confirm the schedule is active in the <em>Schedule</em> tab (the toggle should be on).</li>
-      <li>Check the <em>History</em> tab for the expected run time — Cloud Scheduler may have a few minutes of jitter.</li>
-      <li>If no entry appears after 15 minutes past the scheduled time, check the Cloud Scheduler console in GCP for error logs.</li>
+      <li>Open the <em>Schedule</em> tab and confirm the cadence is set to something other than <em>Manual only</em>. The blue "Scheduled run set" banner at the top shows the next fire time — if it's missing, no schedule is active.</li>
+      <li>Check the <em>History</em> tab for the expected run time. Cloud Scheduler may have a few minutes of jitter, and the Trigger column should show <code>scheduler</code> for an automated run.</li>
+      <li>If a row appears with status <span class="tag yellow">Skipped</span>, expand it — the skip reason will explain (most often "HubSpot or Productboard not connected"). Reconnect on the Connect tab and the next tick will run.</li>
+      <li>If no entry appears at all 15 minutes past the scheduled time, check the Cloud Scheduler console in GCP and the Cloud Run logs for the OIDC verification error.</li>
     </ol>
 
     <!-- ──────────────────────────────── FAQ ── -->
@@ -726,7 +761,7 @@
 
     <h3>How are duplicate companies handled?</h3>
     <p>
-      The engine matches on HubSpot company ID (<span class="pill">hs_object_id</span>). If a Productboard company already has this external ID set, it is updated rather than re-created. If two HubSpot companies share a domain, they are both synced as separate Productboard companies.
+      The engine matches on HubSpot company ID, stored as <code>metadata.source.recordId</code> on the Productboard entity. If a Productboard company already has this source ID, it is updated rather than re-created. When the source ID is missing (e.g. for a record created in PB before the integration was wired up), the engine falls back to a case-insensitive domain match on the <code>domain</code> field — and on a successful fallback, writes the HubSpot ID back so subsequent runs use the fast primary path. Domain fallback can be turned off in the <em>Settings</em> tab.
     </p>
 
     <h3>What happens if I delete a company in HubSpot?</h3>
@@ -746,7 +781,12 @@
 
     <h3>Where are my API keys stored?</h3>
     <p>
-      API keys are encrypted and stored in Google Cloud Secret Manager in production. They are never written to the database or logs. In local development, they are stored in Firestore emulator state (not uploaded anywhere).
+      In production, the HubSpot and Productboard tokens you paste into the Connect tab are written to Google Cloud Secret Manager as <code>hubspot-token</code> and <code>productboard-token</code> versions. Only the version resource name (e.g. <code>projects/.../secrets/hubspot-token/versions/1</code>) is stored in Firestore — the raw token never returns to the browser, and the <code>GET /api/connections</code> response only includes a masked preview. In local development against the Firestore emulator, the Secret Manager call short-circuits and the value lives in emulator state on your machine.
+    </p>
+
+    <h3>Why does my last sync show as "Skipped" with a reason?</h3>
+    <p>
+      A sync skips when one of the connections is missing — for example, the HubSpot or Productboard token was disconnected, or the Cloud Run instance restarted before the Connect-tab tokens were re-resolved. The History row's expanded view shows the reason. As soon as you reconnect both systems on the Connect tab, the next scheduled (or manual) run resumes normally.
     </p>
 
     <hr />

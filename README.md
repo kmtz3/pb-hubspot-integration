@@ -48,11 +48,11 @@ npm run test:all
 
 ## Deployment
 
-See [user-manual.md](user-manual.md) for the full step-by-step. Short version:
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full step-by-step (Terraform + UI-only paths). Short version:
 
 ```bash
 # Build and push the Docker image
-docker build -t gcr.io/YOUR_PROJECT/pb-hubspot-sync:latest .
+docker build --platform linux/amd64 -t gcr.io/YOUR_PROJECT/pb-hubspot-sync:latest .
 docker push gcr.io/YOUR_PROJECT/pb-hubspot-sync:latest
 
 # Deploy infrastructure (first time or to update)
@@ -60,11 +60,13 @@ cd terraform
 cp terraform.tfvars.example terraform.tfvars  # fill in your values
 terraform init && terraform apply
 
-# Populate secrets (first time only)
-echo -n "YOUR_HS_TOKEN" | gcloud secrets versions add HUBSPOT_API_KEY --data-file=-
-echo -n "YOUR_PB_TOKEN" | gcloud secrets versions add PB_API_KEY --data-file=-
-# ... (see user-manual.md for all five secrets)
+# Populate the three platform-level secrets created by Terraform
+openssl rand -base64 32 | gcloud secrets versions add SESSION_SECRET --data-file=-
+echo -n "YOUR_OAUTH_CLIENT_ID"     | gcloud secrets versions add GOOGLE_CLIENT_ID     --data-file=-
+echo -n "YOUR_OAUTH_CLIENT_SECRET" | gcloud secrets versions add GOOGLE_CLIENT_SECRET --data-file=-
 ```
+
+The HubSpot and Productboard tokens are **not** added via `gcloud`. Open the deployed UI's **Connect** tab and paste each token there — the app writes them as new versions of the `hubspot-token` and `productboard-token` Secret Manager secrets and stores the version resource name in Firestore.
 
 ## Architecture
 
@@ -87,8 +89,10 @@ Firestore
   cache/
 
 Secret Manager
-  HUBSPOT_API_KEY, PB_API_KEY, SESSION_SECRET,
-  GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+  Platform (provisioned by Terraform):
+    SESSION_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+  Tokens (created by the app on first Connect-tab save):
+    hubspot-token, productboard-token
 ```
 
 ## HubSpot token scopes
@@ -107,21 +111,23 @@ If `crm.objects.owners.read` is missing, the sync will still run but any field m
 
 | Variable | Required | Description |
 |---|---|---|
-| `PB_API_KEY` | Yes | Productboard API token |
-| `HUBSPOT_API_KEY` | Yes | HubSpot service key token |
 | `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 client ID |
 | `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 client secret |
 | `GOOGLE_ALLOWED_DOMAIN` | Yes | Google Workspace domain for sign-in |
 | `SESSION_SECRET` | Yes | Session signing secret (`openssl rand -base64 32`) |
-| `APP_URL` | Yes | Public URL of this service (for OAuth callback) |
-| `GOOGLE_ALLOWED_EMAILS` | No | Comma-separated allowlist (overrides domain check) |
-| `GCP_PROJECT_ID` | Prod | GCP project (for Cloud Scheduler updates) |
+| `APP_URL` | Yes | Public URL of this service (used to build the OAuth callback) |
+| `FIRESTORE_PROJECT_ID` | Prod | GCP project that owns the Firestore database |
+| `GCP_PROJECT_ID` | Prod | GCP project (used by Secret Manager + Cloud Scheduler clients) |
 | `GCP_REGION` | Prod | GCP region (default `us-central1`) |
-| `GCS_JOB_NAME` | Prod | Full Scheduler job resource name (set by Terraform) |
+| `GCS_JOB_NAME` | Prod | Cloud Scheduler job id or full resource name — set so the Schedule tab can update the cron expression via API |
+| `SCHEDULER_SA_EMAIL` | Prod (if scheduler) | Service account email Cloud Scheduler signs OIDC tokens as. Required when scheduler triggers are enabled |
+| `SCHEDULER_OIDC_AUDIENCE` | Prod (optional) | Override the OIDC `aud` claim. Defaults to `APP_URL` when unset |
+| `GOOGLE_ALLOWED_EMAILS` | No | Comma-separated allowlist; overrides the domain-only check |
 | `FIRESTORE_EMULATOR_HOST` | Dev | Route to local emulator (`127.0.0.1:8080`) |
-| `FIRESTORE_PROJECT_ID` | Dev | Emulator project ID (`demo-local`) |
-| `SYNC_CONCURRENCY` | No | Parallel companies per batch (default `5`) |
+| `SYNC_CONCURRENCY` | No | Parallel companies per batch (default `5`, range 1–25) |
 | `DRY_RUN` | No | Log writes without executing them (`true`/`false`) |
+| `PB_API_KEY` | No (dev fallback) | Local-dev fallback for the Productboard token. In production the token is supplied via the Connect tab and stored as the `productboard-token` Secret Manager secret |
+| `HUBSPOT_API_KEY` | No (dev fallback) | Same as above for HubSpot — stored as `hubspot-token` in production |
 
 ## Key conventions
 

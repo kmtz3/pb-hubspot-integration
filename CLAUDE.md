@@ -28,14 +28,16 @@ pb-hubspot-integration/
 │   ├── .env                       # Local only – never commit (see .env.example)
 │   ├── .env.example               # Safe to commit – documents expected vars
 │   ├── agents/
-│   │   └── api-explorer.md        # Looks up PB/HubSpot API endpoints without hitting live APIs
+│   │   ├── api-explorer.md        # Looks up PB/HubSpot API endpoints without hitting live APIs
+│   │   └── update-docs.md         # Reconciles CLAUDE.md and README.md against a git diff
 │   └── commands/                  # Slash command definitions
 │       ├── add-mapper.md
 │       ├── commit.md
 │       ├── dev.md
 │       ├── health.md
 │       ├── pre-staging-audit.md
-│       └── sync-check.md
+│       ├── sync-check.md
+│       └── update-docs.md
 ├── src/
 │   ├── server.ts                  # Express entry point (port 3000)
 │   ├── routes/                    # Express route handlers
@@ -46,11 +48,12 @@ pb-hubspot-integration/
 │   │   └── sync.ts                # Sync trigger + SSE stream (/api/sync)
 │   ├── sync/                      # Core sync engine
 │   │   ├── engine.ts              # Orchestrates a full sync run
-│   │   ├── productboard.ts        # PB API client (companies, notes, features)
-│   │   ├── hubspot.ts             # HubSpot API client (companies, properties)
-│   │   ├── mapper.ts              # Field mapping: PB ↔ HubSpot
-│   │   ├── dedup.ts               # Idempotency – detect and skip already-synced records
-│   │   └── rateLimit.ts           # Token-bucket rate limiter (respects PB + HS limits)
+│   │   ├── productboard.ts        # PB API client (companies, fields, field values, members)
+│   │   ├── hubspot.ts             # HubSpot API client (companies, properties, owners, scope probes)
+│   │   ├── mapper.ts              # Field mapping: HubSpot → PB type coercion + email resolution
+│   │   ├── dedup.ts               # Idempotency – HubSpot ID primary, domain fallback
+│   │   ├── sanitize.ts            # HTML sanitization for rich-text / description fields
+│   │   └── rateLimit.ts           # Header-driven self-throttling + 429 retry/backoff
 │   ├── lib/                       # Shared server utilities
 │   │   ├── auth.ts                # Passport config, session middleware, requireAuth guard
 │   │   ├── firestore.ts           # Firestore client + typed collection helpers
@@ -66,8 +69,9 @@ pb-hubspot-integration/
 │       ├── index.html
 │       ├── components/
 │       │   ├── Shell.tsx
+│       │   ├── ErrorBoundary.tsx
 │       │   ├── tabs/              # Connect, FilterAccounts, History, MapFields, Schedule, Settings
-│       │   └── ui/                # Badge, Code, InlineAlert
+│       │   └── ui/                # Badge, Code, InlineAlert, SearchableSelect
 │       ├── hooks/
 │       │   ├── api.ts             # react-query wrappers for all API calls
 │       │   └── useSyncStream.ts   # SSE hook for live sync progress
@@ -128,8 +132,8 @@ Copy `.env.example` to `.env` – never commit `.env`.
 |---|---|
 | `NODE_ENV` | `development` or `production` |
 | `PORT` | Express port (default `3000`) |
-| `PB_API_KEY` | Productboard API key |
-| `HUBSPOT_API_KEY` | HubSpot service key token – must grant `crm.objects.companies.read`, `crm.schemas.companies.read`, **and** `crm.objects.owners.read` (the last one is needed to resolve owner IDs to emails for PB member field mappings). The Connect tab probes all three on save and on every "Test connection" run and warns in the UI if any are missing. |
+| `PB_API_KEY` | **Local-dev fallback** for the Productboard token. In production the token is supplied via the Connect tab and stored as the `productboard-token` Secret Manager secret; the resource name is recorded in Firestore. The engine prefers this env var when set so local runs don't need a Secret Manager round-trip. |
+| `HUBSPOT_API_KEY` | **Local-dev fallback** for the HubSpot service key token. In production the token is supplied via the Connect tab and stored as `hubspot-token` in Secret Manager. Whichever path is used, the token must grant `crm.objects.companies.read`, `crm.schemas.companies.read`, **and** `crm.objects.owners.read` (the last one resolves owner IDs to emails for PB member field mappings). The Connect tab probes all three on save and on every "Test connection" run, and reports per-scope ✓ / ✗ status in the UI. |
 | `FIRESTORE_EMULATOR_HOST` | Set to `127.0.0.1:8080` for local dev; omit in production |
 | `FIRESTORE_PROJECT_ID` | `demo-local` for emulator; real GCP project ID in production |
 | `GCP_PROJECT_ID` | GCP project – required in production for Cloud Scheduler |
