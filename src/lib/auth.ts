@@ -155,7 +155,9 @@ export function requireAuthOrScheduler(req: Request, res: Response, next: NextFu
 // In production, fails fast if required auth env vars are missing.
 // In dev, logs a warning so the server still starts for local work.
 export function validateAuthEnv(): void {
-  const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_ALLOWED_DOMAIN', 'SESSION_SECRET', 'APP_URL', 'SCHEDULER_SA_EMAIL'];
+  // SCHEDULER_SA_EMAIL is intentionally not required: verifySchedulerOidcToken returns null
+  // when it's missing, which simply disables the Cloud Scheduler auth path until configured.
+  const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_ALLOWED_DOMAIN', 'SESSION_SECRET', 'APP_URL'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length === 0) return;
   if (!IS_DEV) throw new Error(`Missing auth env vars: ${missing.join(', ')}`);
