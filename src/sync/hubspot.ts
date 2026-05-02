@@ -1,17 +1,29 @@
 import type { HubSpotCompany, HubSpotFilterGroup, HubSpotProperty, HubSpotSearchPayload } from '../types/hubspot';
 import { getSecret } from '../lib/secrets';
+import { getHubSpotConfig } from '../lib/firestore';
 import { withRetry, type ApiResponse } from './rateLimit';
 
 const BASE = 'https://api.hubapi.com';
 const BACKOFF_PAUSE_MS = 200;
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-async function getToken(): Promise<string> {
-  return getSecret('HUBSPOT_API_KEY');
+// Token resolution order:
+//   1. HUBSPOT_API_KEY env var — ops escape hatch in any environment.
+//   2. tokenSecretName on the Firestore connection doc (production: a Secret
+//      Manager resource name; dev: the literal token, since writeSecret
+//      short-circuits when NODE_ENV !== 'production').
+// Anything else means "no token configured" — surface that explicitly so the
+// route handler returns 500 instead of sending the literal string
+// "HUBSPOT_API_KEY" as a Bearer token (which is what the old code did).
+export async function getHubSpotToken(): Promise<string> {
+  if (process.env.HUBSPOT_API_KEY) return process.env.HUBSPOT_API_KEY;
+  const config = await getHubSpotConfig();
+  if (config.tokenSecretName) return getSecret(config.tokenSecretName);
+  throw new Error('HubSpot is not connected — configure a token in the Connect tab.');
 }
 
 async function hsRequest<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-  const token = await getToken();
+  const token = await getHubSpotToken();
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {

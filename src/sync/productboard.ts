@@ -8,6 +8,7 @@ import type {
   PBField,
 } from '../types/productboard';
 import { getSecret } from '../lib/secrets';
+import { getPBConfig } from '../lib/firestore';
 import { withRetry, parsePBHeaders, shouldBackOffPB, type ApiResponse } from './rateLimit';
 import { schemaToToken } from './mapper';
 
@@ -15,8 +16,13 @@ const BASE = 'https://api.productboard.com';
 const BACKOFF_PAUSE_MS = 200;
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-async function getToken(): Promise<string> {
-  return getSecret('PB_API_KEY');
+// Mirrors getHubSpotToken — env var override, then Firestore-stored secret
+// resource name. See hubspot.ts for the rationale.
+export async function getPBToken(): Promise<string> {
+  if (process.env.PB_API_KEY) return process.env.PB_API_KEY;
+  const config = await getPBConfig();
+  if (config.tokenSecretName) return getSecret(config.tokenSecretName);
+  throw new Error('Productboard is not connected — configure a token in the Connect tab.');
 }
 
 // Accepts either a path (`/v2/...`) or an absolute URL — PB v2 cursor
@@ -25,7 +31,7 @@ async function getToken(): Promise<string> {
 // next URL through `encodeURIComponent` as a `pageCursor` value is rejected
 // by PB with "The pagination cursor format is invalid".
 async function pbRequest<T>(pathOrUrl: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-  const token = await getToken();
+  const token = await getPBToken();
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`;
   const res = await fetch(url, {
     ...options,

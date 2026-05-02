@@ -1,9 +1,7 @@
 import { Router } from 'express';
-import { getHubSpotConfig } from '../lib/firestore';
 import { getCachedData, setCachedData } from '../lib/firestore';
-import { fetchProperties } from '../sync/hubspot';
+import { fetchProperties, getHubSpotToken } from '../sync/hubspot';
 import { fetchEntityConfigurations } from '../sync/productboard';
-import { getSecret } from '../lib/secrets';
 import type { HubSpotProperty } from '../types/hubspot';
 import type { PBField } from '../types/productboard';
 import type { HubSpotFilter } from '../types/hubspot';
@@ -20,7 +18,7 @@ router.post('/preview', async (req, res) => {
   if (!Array.isArray(filters)) return res.status(400).json({ error: 'filters array required' });
 
   try {
-    const token = await getSecret('HUBSPOT_API_KEY');
+    const token = await getHubSpotToken();
     const payload = {
       filterGroups: [{ filters }],
       properties: ['name'],
