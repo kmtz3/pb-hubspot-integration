@@ -4,11 +4,6 @@ import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnec
 import type { HubSpotScopeCheck } from '../../hooks/api';
 import type { HubSpotConfig, ProductboardConfig } from '../../../types/sync';
 
-function maskToken(token?: string): string {
-  if (!token) return '';
-  return '••••••••' + token.slice(-4);
-}
-
 function ConnectionCard({
   system,
   title,
@@ -54,7 +49,7 @@ function ConnectionCard({
       {connected ? (
         <>
           <div style={{ fontFamily: 'var(--font-mono)', background: 'var(--muted)', borderRadius: 6, padding: '6px 10px', marginBottom: 12, fontSize: 13 }}>
-            {maskToken(config?.tokenSecretName)}
+            {config?.tokenMasked ?? ''}
           </div>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 12 }}>
             <tbody>

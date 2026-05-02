@@ -81,14 +81,20 @@ export interface HubSpotConfig {
   portalId?: string;
   hubName?: string | null;
   connectedAt?: string;
+  // Server-only: never sent to the browser.
   tokenSecretName?: string;
+  // Browser-safe display only. Populated by the route handler before responding.
+  tokenMasked?: string;
 }
 
 export interface ProductboardConfig {
   connected: boolean;
   workspaceName?: string | null;
   connectedAt?: string;
+  // Server-only: never sent to the browser.
   tokenSecretName?: string;
+  // Browser-safe display only. Populated by the route handler before responding.
+  tokenMasked?: string;
 }
 
 export interface AccountFilter {

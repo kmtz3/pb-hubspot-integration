@@ -3,13 +3,22 @@ import { getHubSpotConfig, saveHubSpotConfig, clearHubSpotConfig, getPBConfig, s
 import { getSecret } from '../lib/secrets';
 import { getAccountInfo, checkScopes } from '../sync/hubspot';
 import { testConnection } from '../sync/productboard';
+import type { HubSpotConfig, ProductboardConfig } from '../types/sync';
 
 export const router = Router();
+
+// Strip the raw token from any config before sending it to the browser.
+// Replaces tokenSecretName with a short masked preview for UI display.
+function sanitize<T extends HubSpotConfig | ProductboardConfig>(config: T): Omit<T, 'tokenSecretName'> & { tokenMasked?: string } {
+  const { tokenSecretName, ...rest } = config;
+  const tokenMasked = tokenSecretName ? '••••••••' + tokenSecretName.slice(-4) : undefined;
+  return { ...rest, tokenMasked };
+}
 
 router.get('/', async (_req, res) => {
   try {
     const [hubspot, productboard] = await Promise.all([getHubSpotConfig(), getPBConfig()]);
-    res.json({ hubspot, productboard });
+    res.json({ hubspot: sanitize(hubspot), productboard: sanitize(productboard) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load connection status' });
   }
@@ -30,7 +39,7 @@ router.post('/hubspot', async (req, res) => {
     // in dev getSecret falls back to treating it as the literal value.
     const tokenSecretName = token;
 
-    const config = {
+    const config: HubSpotConfig = {
       connected: true,
       portalId,
       hubName,
@@ -38,7 +47,7 @@ router.post('/hubspot', async (req, res) => {
       tokenSecretName,
     };
     await saveHubSpotConfig(config);
-    res.json({ ...config, scopes });
+    res.json({ ...sanitize(config), scopes });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: `HubSpot connection failed: ${msg}` });
@@ -53,14 +62,14 @@ router.post('/productboard', async (req, res) => {
     const { workspaceName } = await testConnection(token);
 
     const tokenSecretName = token;
-    const config = {
+    const config: ProductboardConfig = {
       connected: true,
       workspaceName,
       connectedAt: new Date().toISOString(),
       tokenSecretName,
     };
     await savePBConfig(config);
-    res.json(config);
+    res.json(sanitize(config));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: `Productboard connection failed: ${msg}` });
