@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getHubSpotConfig, saveHubSpotConfig, clearHubSpotConfig, getPBConfig, savePBConfig, clearPBConfig } from '../lib/firestore';
-import { getSecret } from '../lib/secrets';
+import { getSecret, writeSecret } from '../lib/secrets';
 import { getAccountInfo, checkScopes } from '../sync/hubspot';
 import { testConnection } from '../sync/productboard';
 import type { HubSpotConfig, ProductboardConfig } from '../types/sync';
@@ -34,10 +34,11 @@ router.post('/hubspot', async (req, res) => {
       checkScopes(token),
     ]);
 
-    // Store the token as the secret name in both dev and prod.
-    // In prod this will be replaced with a Secret Manager resource name;
-    // in dev getSecret falls back to treating it as the literal value.
-    const tokenSecretName = token;
+    // In production: write the token to Secret Manager and store the version
+    // resource name (projects/…/secrets/hubspot-token/versions/N) in Firestore.
+    // In dev: writeSecret returns the literal token, matching the pre-existing
+    // local-development flow that getSecret already supports.
+    const tokenSecretName = await writeSecret('hubspot-token', token);
 
     const config: HubSpotConfig = {
       connected: true,
@@ -61,7 +62,7 @@ router.post('/productboard', async (req, res) => {
   try {
     const { workspaceName } = await testConnection(token);
 
-    const tokenSecretName = token;
+    const tokenSecretName = await writeSecret('productboard-token', token);
     const config: ProductboardConfig = {
       connected: true,
       workspaceName,
