@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#1e3d22"/>
+  <!-- wrench-jaw hull: two raised ears flank the bolt-opening gap -->
+  <path d="M6,20 L10,20 L10,24 L22,24 L22,20 L26,20 L26,28 Q16,30 6,28 Z" fill="white"/>
+  <!-- main sail (right) -->
+  <polygon points="16,4 16,20 26,20" fill="white"/>
+  <!-- jib sail (left) -->
+  <polygon points="16,9 16,20 6,20" fill="rgba(255,255,255,0.55)"/>
+</svg>
