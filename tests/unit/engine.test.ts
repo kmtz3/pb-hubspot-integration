@@ -312,11 +312,23 @@ describe('runSync — dispatcher (Phase 1)', () => {
     );
   });
 
-  it('throws "not yet implemented" for objectType=deals (lands in Phase 4)', async () => {
-    await expect(
-      runSync({ trigger: 'scheduler', runId: 'r-dispatch-deals', objectType: 'deals' })
-    ).rejects.toThrow(/not yet implemented/i);
+  it('routes objectType=deals to the deals path and writes a deals history record', async () => {
+    // Deals path needs its own Firestore mocks beyond the companies defaults.
+    // We only verify the dispatcher fans out correctly here — the deals run's
+    // inner pipeline is covered by the dedicated deals test files. With no
+    // pipeline configured in the deals filter, the deals path emits a
+    // skipped run, which is the right shape for the dispatcher assertion.
+    const { getDealsFilter, getDealsFieldMappings } = jest.requireMock('../../src/lib/firestore');
+    getDealsFilter.mockResolvedValue({ pipelineId: '', stageIds: [], filterGroups: [] });
+    getDealsFieldMappings.mockResolvedValue({ tags: [], body: [], rules: [], staticTags: [] });
+
+    await runSync({ trigger: 'scheduler', runId: 'r-dispatch-deals', objectType: 'deals' });
+
+    // Companies path was NOT taken.
     expect(mockFetchCompanies).not.toHaveBeenCalled();
-    expect(mockWriteHistory).not.toHaveBeenCalled();
+    // History row marks the run as deals (skipped because pipeline is empty).
+    expect(mockWriteHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ objectType: 'deals' })
+    );
   });
 });

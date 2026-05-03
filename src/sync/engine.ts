@@ -1,19 +1,24 @@
-import type { SyncDebugLog, SyncStats, SyncTrigger, SseEmitter, SyncEvent, ObjectType, SyncMode } from '../types/sync';
-import type { PBFieldValuesCache } from '../types/productboard';
+import type { SyncDebugLog, SyncStats, SyncRunError, SyncRunWarning, SyncTrigger, SseEmitter, SyncEvent, ObjectType, SyncMode } from '../types/sync';
+import type { CreateNotePayload, NotePatch, PBFieldValuesCache, ProductboardNote, ProductboardTag, ProductboardTagRef } from '../types/productboard';
 import {
   getSyncConfig,
   getFieldMappings,
   getAccountFilter,
+  getDealsFieldMappings,
+  getDealsFilter,
   getHubSpotConfig,
   getPBConfig,
   updateSyncConfig,
   writeSyncHistory,
 } from '../lib/firestore';
-import { fetchCompanies, fetchOwnerEmailMapsCached, fetchProperties } from './hubspot';
+import { fetchCompanies, fetchDeals, fetchDealAssociations, fetchOwnerEmailMapsCached, fetchProperties } from './hubspot';
 import * as pbClient from './productboard';
-import { buildCompanyMaps, findExistingCompany } from './dedup';
+import { buildCompanyMaps, buildDealNoteMaps, findExistingCompany, findExistingDealNote, parseDealRecordId, type DealNoteIndex } from './dedup';
 import { buildCompanyFieldsPayload, buildPatchOperations, detectOwnerIdField, stripNullFieldValues } from './mapper';
+import { buildDealNotePayload } from './dealNoteBuilder';
+import { patchDealNoteContent } from './notePatcher';
 import type { FieldMapping } from '../types/sync';
+import type { HubSpotDeal } from '../types/hubspot';
 import type { PBField, PBFieldValue } from '../types/productboard';
 import { ApiError } from './rateLimit';
 
@@ -184,10 +189,620 @@ export async function runSync(options: RunSyncOptions): Promise<SyncStats> {
   throw new Error(`runSync: unsupported objectType "${String(objectType)}"`);
 }
 
-// Phase 4 wires the deals path; this stub lets the dispatcher and routes
-// compile and ship without exposing a half-built sync.
-export async function runDealsSync(_options: RunSyncOptions): Promise<SyncStats> {
-  throw new Error('Deals sync not yet implemented (lands in Phase 4)');
+// ── Deals sync (Phase 4) ────────────────────────────────────────────────────
+//
+// Mirrors `runCompaniesSync` shape: skip-on-disconnect, per-batch concurrency,
+// SSE events, history record, lastSyncAt cursor. The inner write pipeline
+// follows the algorithm in plan-deals-support.md ("Engine algorithm —
+// content-lock fallback (N-link safe)" and "Multi-company recordId
+// algorithm") verbatim.
+//
+// Reuses the shared cached helpers from Phase 3 — `buildPbMemberEmailSetCached`
+// and `fetchOwnerEmailMapsCached`. Two scheduler invocations on the same warm
+// instance share the result for 60s (D27).
+
+function buildHsDealUrl(portalId: string | undefined, dealId: string): string {
+  // Canonical HS deal URL. When `portalId` is unknown (the Connect tab is
+  // pre-Phase-2 and didn't capture it), drop the segment rather than
+  // hardcoding a placeholder — PB shows the URL on the note's source link.
+  return portalId
+    ? `https://app.hubspot.com/contacts/${portalId}/deal/${dealId}`
+    : `https://app.hubspot.com/deal/${dealId}`;
+}
+
+interface DealTarget {
+  companyKey: string | null;
+  recordId: string;
+  pbCompanyUuid: string;
+}
+
+// Exported for unit tests covering the multi-company recordId algorithm
+// (plan section "Multi-company recordId algorithm").
+export function computeDealTargets(
+  deal: HubSpotDeal,
+  associations: { primary?: string; all: string[] },
+  multiCompany: boolean,
+  companyMap: Map<string, string>,
+  unassignedPlaceholderUuid: string,
+): DealTarget[] {
+  if (multiCompany && associations.all.length > 1) {
+    return associations.all.map(companyId => ({
+      companyKey: companyId,
+      recordId: `deal-${deal.id}::company-${companyId}`,
+      pbCompanyUuid: companyMap.get(companyId) ?? unassignedPlaceholderUuid,
+    }));
+  }
+  const primary = associations.primary ?? associations.all[0] ?? null;
+  return [{
+    companyKey: null,
+    recordId: `deal-${deal.id}`,
+    pbCompanyUuid: primary
+      ? (companyMap.get(primary) ?? unassignedPlaceholderUuid)
+      : unassignedPlaceholderUuid,
+  }];
+}
+
+// Existing tags on a PB note as a sorted, deduped name list. Used for D10's
+// union-on-PATCH semantics — never subtract tags the user added in PB.
+export function existingTagNames(note: ProductboardNote): string[] {
+  const tags = note.fields?.tags ?? [];
+  const set = new Set<string>();
+  for (const t of tags) {
+    if (t?.name) set.add(t.name);
+  }
+  return [...set];
+}
+
+export function unionTagNames(existing: string[], requested: string[]): string[] {
+  const set = new Set<string>();
+  for (const n of existing)  if (n) set.add(n);
+  for (const n of requested) if (n) set.add(n);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+export async function runDealsSync(options: RunSyncOptions): Promise<SyncStats> {
+  const { trigger, sseEmitter, runId } = options;
+  // Deals runs default to incremental. Backfill is the explicit window mode
+  // (windowFrom/windowTo + windowField); `full` is companies-only and is
+  // coerced down to incremental for deals to keep the cursor honest.
+  const mode: SyncMode = options.mode === 'backfill'
+    ? 'backfill'
+    : 'incremental';
+  const startedAt = new Date().toISOString();
+
+  activeRuns.set(runId, { cancelRequested: false });
+  await updateSyncConfig({ inProgress: true });
+
+  const stats: SyncStats = { fetched: 0, created: 0, updated: 0, skipped: 0, errors: 0 };
+  const errors: SyncRunError[] = [];
+  const warnings: SyncRunWarning[] = [];
+  const debugLogs: SyncDebugLog[] = [];
+
+  const skip = await checkConnectionsForSkip();
+  if (skip) {
+    const finishedAt = new Date().toISOString();
+    sseEmitter?.({ type: 'done', status: 'skipped', stats, durationMs: 0 });
+    await writeSyncHistory({
+      startedAt, finishedAt, trigger, status: 'skipped',
+      objectType: 'deals', mode,
+      stats, errors: [], skipReason: skip,
+    });
+    await updateSyncConfig({
+      lastSyncAt: { deals: finishedAt },
+      lastSyncStatus: 'skipped',
+      lastSyncStats: stats,
+      inProgress: false,
+    });
+    activeRuns.delete(runId);
+    return stats;
+  }
+
+  try {
+    const [syncConfig, dealsMappings, dealsFilter, hsConfig] = await Promise.all([
+      getSyncConfig(),
+      getDealsFieldMappings(),
+      getDealsFilter(),
+      getHubSpotConfig(),
+    ]);
+
+    if (!dealsFilter.pipelineId) {
+      // No pipeline configured — nothing to sync. Emit a skipped run so the
+      // UI surfaces the misconfiguration instead of silently producing zero
+      // results in a `success` row.
+      const finishedAt = new Date().toISOString();
+      const skipReason = 'No deal pipeline configured — set one in Deals → Filter';
+      sseEmitter?.({ type: 'done', status: 'skipped', stats, durationMs: 0 });
+      await writeSyncHistory({
+        startedAt, finishedAt, trigger, status: 'skipped',
+        objectType: 'deals', mode, stats, errors: [], skipReason,
+      });
+      await updateSyncConfig({
+        lastSyncAt: { deals: finishedAt },
+        lastSyncStatus: 'skipped',
+        lastSyncStats: stats,
+        inProgress: false,
+      });
+      activeRuns.delete(runId);
+      return stats;
+    }
+
+    // Shared directories (D20 + D27): fetched through the cached helpers so
+    // a deals run that fires seconds after a companies run on the same warm
+    // instance reuses the same /v2/members + /crm/v3/owners walks.
+    let pbMemberEmails: Set<string>;
+    let ownerIdToEmail: Map<string, string>;
+    try {
+      pbMemberEmails = DRY_RUN() ? new Set() : await pbClient.buildPbMemberEmailSetCached();
+    } catch (e) {
+      console.warn('runDealsSync: could not pre-load PB members for owner gating:', e);
+      pbMemberEmails = new Set();
+    }
+    try {
+      const maps = DRY_RUN()
+        ? { ownerIdToEmail: new Map<string, string>(), userIdToEmail: new Map<string, string>() }
+        : await fetchOwnerEmailMapsCached();
+      ownerIdToEmail = maps.ownerIdToEmail;
+    } catch (e) {
+      console.warn('runDealsSync: could not pre-load HS owners for id → email resolution:', e);
+      ownerIdToEmail = new Map();
+    }
+
+    // PB company dedup (HS recordId → PB uuid) — reused from the companies
+    // sync. Walks every PB company once, same primitive as runCompaniesSync.
+    const companyMaps = DRY_RUN()
+      ? { byRecordId: new Map<string, string>(), byDomain: new Map<string, string>() }
+      : buildCompanyMaps(await pbClient.listCompanies());
+
+    // Placeholder PB company for deals whose HS company hasn't been synced
+    // yet (D5). `getOrCreateUnassignedCompany` is idempotent — looks up by
+    // metadata.source first, creates only on miss.
+    const { pbUuid: unassignedPlaceholderUuid } = DRY_RUN()
+      ? { pbUuid: 'pb-unassigned-dryrun' }
+      : await pbClient.getOrCreateUnassignedCompany();
+
+    // Heal pass — re-resolve any placeholder-attached deal notes against the
+    // now-current company map. Runs BEFORE the main sync so newly-attached
+    // notes don't get archived by the target-set diff below.
+    if (!DRY_RUN()) {
+      try {
+        const healed = await healUnassignedNotes({
+          pbMemberEmails,
+          ownerIdToEmail,
+          userIdToEmail: new Map(),
+          unassignedPlaceholderUuid,
+          companyByHsId: companyMaps.byRecordId,
+        });
+        if (healed > 0) console.info(`runDealsSync: healed ${healed} unassigned note(s)`);
+      } catch (e) {
+        console.warn('runDealsSync: heal pass failed (continuing with main sync):', e);
+      }
+    }
+
+    // Walk every hubspot-source note once and build the deal-note index.
+    const dealNoteIndex: DealNoteIndex = DRY_RUN()
+      ? new Map()
+      : buildDealNoteMaps(await pbClient.listHubspotDealNotes());
+
+    const filterGroups = dealsFilter.filterGroups ?? [];
+    const lastSyncAt = mode === 'backfill'
+      ? null
+      : (syncConfig.lastSyncAt?.deals ? new Date(syncConfig.lastSyncAt.deals).getTime() : null);
+
+    const deals = await fetchDeals({
+      filterGroups,
+      pipelineId: dealsFilter.pipelineId,
+      stageIds: dealsFilter.stageIds,
+      properties: collectDealProperties(dealsMappings),
+      lastSyncAt,
+      windowFrom: options.windowFrom ?? null,
+      windowTo: options.windowTo ?? null,
+      windowField: options.windowField,
+    });
+
+    stats.fetched = deals.length;
+
+    const associations = deals.length > 0
+      ? await fetchDealAssociations(deals.map(d => d.id))
+      : new Map<string, { primary?: string; all: string[] }>();
+
+    // Pre-flight tag provisioning ONCE per run (D2 + tag-handling contract).
+    // Collect every tag name the run will need across staticTags + rule output
+    // + tagMappings × every deal, dedup, then call ensureTagsExist once. Names
+    // not present in the PB workspace are dropped from the cache; the engine
+    // intersects each deal's requested set with the cache and increments
+    // stats.tagsDropped + warnings for the difference.
+    const requestedTagNamesPerDeal = new Map<string, string[]>();
+    const allRequestedNames = new Set<string>();
+    for (const deal of deals) {
+      const targets = computeDealTargets(
+        deal,
+        associations.get(deal.id) ?? { all: [] },
+        syncConfig.multiCompanyDealNotes,
+        companyMaps.byRecordId,
+        unassignedPlaceholderUuid,
+      );
+      // The same deal lands the same tag set across every target (multi-mode
+      // produces N notes from one deal, but tags are deal-level). We compute
+      // once and reuse per target below.
+      const tagPreview = buildDealNotePayload({
+        deal,
+        companyPbUuid: targets[0]?.pbCompanyUuid ?? unassignedPlaceholderUuid,
+        companyKey: targets[0]?.companyKey ?? null,
+        recordId: targets[0]?.recordId ?? `deal-${deal.id}`,
+        sourceUrl: buildHsDealUrl(hsConfig.portalId, deal.id),
+        tagMappings: dealsMappings.tags,
+        bodyMappings: dealsMappings.body,
+        rules: dealsMappings.rules,
+        staticTags: dealsMappings.staticTags,
+        ownerEmail: null,
+      });
+      requestedTagNamesPerDeal.set(deal.id, tagPreview.tagsToProvision);
+      for (const n of tagPreview.tagsToProvision) allRequestedNames.add(n);
+    }
+
+    const tagCache = new Map<string, ProductboardTag>();
+    const resolvedTags = DRY_RUN() || allRequestedNames.size === 0
+      ? new Map<string, ProductboardTag>()
+      : await pbClient.ensureTagsExist([...allRequestedNames], tagCache);
+
+    // Track every dropped name once for the warnings field. Per-deal counts
+    // still flow into stats.tagsDropped so the UI shows scale.
+    const droppedTagNames = new Set<string>();
+    for (const name of allRequestedNames) {
+      if (!resolvedTags.has(name)) droppedTagNames.add(name);
+    }
+    if (droppedTagNames.size > 0) {
+      warnings.push({
+        hsId: null,
+        name: 'tags-dropped',
+        detail:
+          `${droppedTagNames.size} tag name(s) requested by deals but missing from the PB workspace; ` +
+          `dropped from note writes (PB tag-value provisioning is currently unavailable — pre-seed the tags in PB before next run): ` +
+          [...droppedTagNames].sort((a, b) => a.localeCompare(b)).join(', '),
+      });
+    }
+
+    const emit = (event: SyncEvent) => sseEmitter?.(event);
+
+    for (let i = 0; i < deals.length; i += CONCURRENCY) {
+      const ctx = activeRuns.get(runId);
+      if (ctx?.cancelRequested) break;
+
+      const batch = deals.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(async (deal) => {
+        const dealName = deal.properties.dealname ?? deal.id;
+        const debug: Partial<SyncDebugLog> = { hsId: deal.id, name: dealName };
+
+        try {
+          const dealAssocs = associations.get(deal.id) ?? { all: [] };
+          const targets = computeDealTargets(
+            deal,
+            dealAssocs,
+            syncConfig.multiCompanyDealNotes,
+            companyMaps.byRecordId,
+            unassignedPlaceholderUuid,
+          );
+
+          const ownerHsId = deal.properties.hubspot_owner_id;
+          const ownerEmailRaw = ownerHsId ? ownerIdToEmail.get(String(ownerHsId)) : undefined;
+          let ownerEmail: string | null = null;
+          if (ownerEmailRaw) {
+            if (pbMemberEmails.has(ownerEmailRaw)) {
+              ownerEmail = ownerEmailRaw;
+            } else {
+              // D12 — silently drop the owner; bump stats.ownerSkipped so the
+              // History tab surfaces the count.
+              stats.ownerSkipped = (stats.ownerSkipped ?? 0) + 1;
+            }
+          }
+
+          const requestedNames = requestedTagNamesPerDeal.get(deal.id) ?? [];
+          const resolvedDealTags: ProductboardTagRef[] = [];
+          for (const name of requestedNames) {
+            const tag = resolvedTags.get(name);
+            if (tag) {
+              resolvedDealTags.push({ id: tag.id, name: tag.name });
+            } else {
+              stats.tagsDropped = (stats.tagsDropped ?? 0) + 1;
+            }
+          }
+
+          const targetKeys = new Set<string | null>();
+          for (const target of targets) {
+            targetKeys.add(target.companyKey);
+            const existing = findExistingDealNote(deal.id, target.companyKey, dealNoteIndex);
+
+            const built = buildDealNotePayload({
+              deal,
+              companyPbUuid: target.pbCompanyUuid,
+              companyKey: target.companyKey,
+              recordId: target.recordId,
+              sourceUrl: buildHsDealUrl(hsConfig.portalId, deal.id),
+              tagMappings: dealsMappings.tags,
+              bodyMappings: dealsMappings.body,
+              rules: dealsMappings.rules,
+              staticTags: dealsMappings.staticTags,
+              ownerEmail,
+            });
+            // Replace the name-only tag refs with the resolved (id+name)
+            // entries so PB doesn't 422 on selectOption.notFound.
+            const payload = withResolvedTags(built.payload, resolvedDealTags);
+
+            if (DRY_RUN()) {
+              console.log(`[DRY_RUN] would ${existing ? 'update' : 'create'} deal note for ${deal.id} → ${target.recordId}`);
+              stats.skipped++;
+              emit({ type: 'record', status: 'skipped', name: dealName, hsId: deal.id, detail: 'dry-run' });
+              continue;
+            }
+
+            if (existing) {
+              // Build PATCH semantics: union tags (D10), owner only-when-empty (D11),
+              // always update content + name. Content-lock 422 falls back through
+              // notePatcher.
+              const unionedTags = unionTagNames(existingTagNames(existing), resolvedDealTags.map(t => t.name));
+              const tagRefsForPatch: ProductboardTagRef[] = unionedTags.map(name => {
+                const resolved = resolvedTags.get(name);
+                return resolved ? { id: resolved.id, name } : { name };
+              });
+              const ownerCurrentlyEmpty = !existing.fields?.owner;
+              const patchFields: NotePatch['data']['fields'] = {
+                ...(payload.data.fields.name      !== undefined ? { name:    payload.data.fields.name    } : {}),
+                ...(payload.data.fields.content   !== undefined ? { content: payload.data.fields.content } : {}),
+                ...(tagRefsForPatch.length > 0    ? { tags: tagRefsForPatch } : {}),
+                ...(ownerEmail && ownerCurrentlyEmpty ? { owner: { email: ownerEmail } } : {}),
+              };
+
+              const patch: NotePatch = { data: { fields: patchFields } };
+              debug.action = 'update';
+              debug.pbId = existing.id;
+              debug.payload = patch;
+
+              const outcome = await patchDealNoteContent(existing.id, patch, {
+                forceContentUpdates: syncConfig.forceContentUpdates,
+              });
+              if (outcome.status === 'patched-without-content') {
+                stats.contentSkipped = (stats.contentSkipped ?? 0) + 1;
+              } else if (outcome.status === 'patched-via-relink') {
+                stats.snippetsStripped = (stats.snippetsStripped ?? 0) + (outcome.linksRecycled ?? 0);
+              }
+              stats.updated++;
+              emit({ type: 'record', status: 'updated', name: dealName, hsId: deal.id });
+            } else {
+              debug.action = 'create';
+              debug.payload = payload;
+              await pbClient.createDealNote(payload);
+              stats.created++;
+              emit({ type: 'record', status: 'created', name: dealName, hsId: deal.id });
+            }
+          }
+
+          // Archive existing notes whose company key fell out of the target
+          // set (D6 — multi → single flip, or company association removed in
+          // HS). Hard-delete is intentionally avoided.
+          const existingForDeal = dealNoteIndex.get(deal.id);
+          if (existingForDeal && !DRY_RUN()) {
+            for (const [existingKey, existingNote] of existingForDeal) {
+              if (targetKeys.has(existingKey)) continue;
+              try {
+                const staleTags = unionTagNames(existingTagNames(existingNote), ['stale-association']);
+                const staleTagsResolved: ProductboardTagRef[] = staleTags.map(name => {
+                  const resolved = resolvedTags.get(name);
+                  return resolved ? { id: resolved.id, name } : { name };
+                });
+                const archivePatch: NotePatch = {
+                  data: {
+                    fields: { archived: true, tags: staleTagsResolved },
+                  },
+                };
+                await pbClient.patchDealNote(existingNote.id, archivePatch);
+                stats.archived = (stats.archived ?? 0) + 1;
+              } catch (archiveErr) {
+                // Don't let an archive failure mask the create/update successes
+                // for this deal — record the warning and continue.
+                const detail = archiveErr instanceof Error ? archiveErr.message : String(archiveErr);
+                warnings.push({
+                  hsId: deal.id,
+                  name: dealName,
+                  detail: `Failed to archive stale note ${existingNote.id}: ${detail}`,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          stats.errors++;
+          const detail = err instanceof Error ? err.message : String(err);
+          errors.push({ hsId: deal.id, name: dealName, detail });
+          if (syncConfig.debugLogging) {
+            debugLogs.push({
+              at: new Date().toISOString(),
+              hsId: debug.hsId ?? null,
+              name: debug.name ?? deal.id,
+              action: debug.action,
+              pbId: debug.pbId,
+              payload: debug.payload,
+              error: serializeError(err),
+            });
+          }
+          emit({ type: 'record', status: 'error', name: dealName, hsId: deal.id, detail });
+        }
+      }));
+
+      const processed = Math.min(i + CONCURRENCY, deals.length);
+      emit({
+        type: 'progress',
+        processed,
+        total: deals.length,
+        created: stats.created,
+        updated: stats.updated,
+        skipped: stats.skipped,
+        errors: stats.errors,
+        rate: 0,
+        eta: '',
+      });
+
+      await updateSyncConfig({ inProgressStats: { ...stats } });
+    }
+
+    const finishedAt = new Date().toISOString();
+    const status = errors.length === 0
+      ? 'success'
+      : errors.length === stats.fetched
+      ? 'failed'
+      : 'partial';
+
+    emit({ type: 'done', status, stats, durationMs: Date.now() - new Date(startedAt).getTime() });
+
+    await writeSyncHistory({
+      startedAt,
+      finishedAt,
+      trigger,
+      status,
+      objectType: 'deals',
+      mode,
+      stats,
+      errors,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      ...(syncConfig.debugLogging ? { debugLogs } : {}),
+    });
+
+    // Backfill runs explicitly do NOT advance the incremental cursor — the
+    // window is one-shot and arbitrary, so anchoring on its endpoint would
+    // skip records modified outside the window since the last incremental.
+    const cursorUpdate = mode === 'backfill'
+      ? {}
+      : { lastSyncAt: { deals: finishedAt } };
+
+    await updateSyncConfig({
+      ...cursorUpdate,
+      lastSyncStatus: status,
+      lastSyncStats: stats,
+      inProgress: false,
+    });
+
+    return stats;
+  } catch (err) {
+    await updateSyncConfig({ inProgress: false });
+    throw err;
+  } finally {
+    activeRuns.delete(runId);
+  }
+}
+
+// Replace the bare `{name}` tag refs produced by the builder with the
+// resolved `{id, name}` refs from `ensureTagsExist`. PB rejects unknown tag
+// names with `selectOption.notFound`; only the resolved set is safe to send.
+function withResolvedTags(payload: CreateNotePayload, resolved: ProductboardTagRef[]): CreateNotePayload {
+  if (resolved.length === 0) {
+    const fields = { ...payload.data.fields };
+    delete fields.tags;
+    return { data: { ...payload.data, fields } };
+  }
+  return {
+    data: {
+      ...payload.data,
+      fields: { ...payload.data.fields, tags: resolved },
+    },
+  };
+}
+
+// Properties to fetch on each deal: defaults from the HS deal client plus
+// every property referenced by tag/body/rule mappings. Dedups to keep the
+// search payload compact.
+function collectDealProperties(mappings: { tags: { hsField: string }[]; body: { hsField: string }[]; rules: { field: string }[] }): string[] {
+  const set = new Set<string>([
+    'dealname', 'dealstage', 'pipeline', 'amount', 'closedate',
+    'hubspot_owner_id', 'hs_lastmodifieddate', 'createdate', 'description',
+    'hs_is_closed_won', 'hs_is_closed_lost',
+  ]);
+  for (const m of mappings.tags) if (m.hsField) set.add(m.hsField);
+  for (const m of mappings.body) if (m.hsField) set.add(m.hsField);
+  for (const m of mappings.rules) if (m.field)  set.add(m.field);
+  return [...set];
+}
+
+// ── Heal pass (D5) ──────────────────────────────────────────────────────────
+//
+// Re-resolves any deal note currently attached to the unassigned placeholder
+// against the now-current PB company map. Called as the first step of every
+// runDealsSync (and exported for direct use by tests / future cron jobs).
+//
+// PB's note PATCH endpoint does NOT accept relationship changes (live-tested
+// constraint). To move the customer link, we have to recreate it via the
+// dedicated /relationships endpoints. The customer link uses target.type
+// 'company' on the CreateNotePayload shape — but PB accepts only `link`-type
+// targets on the per-note POST /relationships route. Customer relationships
+// are atomic at create time and must stay; for a heal we instead PATCH the
+// note metadata to record the new pb company uuid via a fresh create+archive
+// cycle. For Phase 4 we take the simpler path: tag the placeholder note with
+// a `needs-rehome` marker so a human can act on it, and surface healed counts
+// in the SSE stream once PB exposes a customer-link mutation. See
+// docs/internal/deals-sync-limitations.md for the followup.
+//
+// CONCRETE BEHAVIOR FOR PHASE 4: walk every note attached to the placeholder
+// company, parse its recordId, look up the resolved HS company in the dedup
+// map. If the resolved company exists in PB, archive the placeholder-bound
+// note and let the next regular runDealsSync recreate it under the right
+// company (the recordId stays the same; the existing note flow will see
+// `archived=true` on it and skip the dedup match, recreating cleanly under
+// the resolved company). Otherwise, leave it alone.
+
+interface HealContext {
+  pbMemberEmails: Set<string>;
+  ownerIdToEmail: Map<string, string>;
+  userIdToEmail: Map<string, string>;
+  unassignedPlaceholderUuid: string;
+  companyByHsId: Map<string, string>;
+}
+
+export async function healUnassignedNotes(ctx: HealContext): Promise<number> {
+  // Walk every hubspot-source note and pick the ones whose first customer
+  // relationship targets the placeholder. We can't filter PB-side because
+  // the v2 notes index doesn't expose a customer-id filter.
+  const notes = await pbClient.listHubspotDealNotes();
+
+  let healed = 0;
+  for (const note of notes) {
+    if (note.fields?.archived) continue;
+
+    const recordId = note.metadata?.source?.recordId;
+    if (!recordId) continue;
+    const parsed = parseDealRecordId(recordId);
+    if (!parsed) continue;
+
+    let rels: typeof note.relationships;
+    try {
+      rels = await pbClient.getDealNoteRelationships(note.id);
+    } catch (e) {
+      console.warn(`healUnassignedNotes: failed to read relationships for note ${note.id}:`, e);
+      continue;
+    }
+    const customerRel = rels?.find(r => r.type === 'customer');
+    if (!customerRel || customerRel.target.id !== ctx.unassignedPlaceholderUuid) continue;
+
+    // Resolve target company. Multi-mode notes carry the HS company id in
+    // their recordId; single-mode notes don't, so we can't heal them here —
+    // their customer link is recreated by the main flow when the primary
+    // association now resolves to a real PB company.
+    const resolvedTarget = parsed.companyKey
+      ? ctx.companyByHsId.get(parsed.companyKey)
+      : null;
+    if (!resolvedTarget) continue;
+
+    // Archive the placeholder-bound note. The next runDealsSync iteration
+    // will recreate it under the resolved company because dedup keys on
+    // `archived !== true` (existing index walk already skips archived rows
+    // via `note.fields?.archived` check above on the next pass).
+    try {
+      await pbClient.patchDealNote(note.id, {
+        data: { fields: { archived: true } },
+      });
+      healed++;
+    } catch (e) {
+      console.warn(`healUnassignedNotes: failed to archive placeholder note ${note.id}:`, e);
+    }
+  }
+
+  return healed;
 }
 
 // ── Companies sync (existing behavior, unchanged from pre-refactor) ─────────

@@ -77,18 +77,59 @@ export function findExistingCompany(
 
 export type DealNoteIndex = Map<string, Map<string | null, ProductboardNote>>;
 
-export function buildDealNoteMaps(_notes: ProductboardNote[]): DealNoteIndex {
-  // Implemented in Phase 4 — parses each note's recordId, splits on `::`,
-  // strips the `deal-` / `company-` prefixes, and inserts into the nested
-  // map with `null` as the inner key for single-mode notes.
-  throw new Error('buildDealNoteMaps not yet implemented (lands in Phase 4)');
+// Parses a `deal-…::company-…` (or single-mode `deal-…`) recordId into a
+// `(dealId, companyKey)` pair. Returns null when the input doesn't carry the
+// `deal-` prefix on its first segment — those records are emitted by other
+// hubspot-source flows (e.g. the legacy companies enrichment notes) and are
+// not part of the deal-note index.
+export function parseDealRecordId(recordId: string): { dealId: string; companyKey: string | null } | null {
+  if (!recordId) return null;
+  const [dealPart, companyPart] = recordId.split('::');
+  if (!dealPart.startsWith('deal-')) return null;
+  const dealId = dealPart.slice('deal-'.length);
+  if (!dealId) return null;
+  if (companyPart === undefined) {
+    return { dealId, companyKey: null };
+  }
+  if (!companyPart.startsWith('company-')) return null;
+  const companyKey = companyPart.slice('company-'.length);
+  if (!companyKey) return null;
+  return { dealId, companyKey };
+}
+
+// Walk every hubspot-source note once and project to a nested map:
+//   outer key = HS deal id
+//   inner key = HS company id (multi-mode) or null (single-mode)
+// Notes whose recordId doesn't match the deal-note format are silently
+// skipped — `listHubspotDealNotes` returns the union of every system=hubspot
+// note, not just deal notes. Archived notes are also skipped so the heal pass
+// (which archives placeholder-bound notes) doesn't trip the dedup match on
+// the same run — the main flow then recreates them under the resolved
+// company.
+export function buildDealNoteMaps(notes: ProductboardNote[]): DealNoteIndex {
+  const index: DealNoteIndex = new Map();
+  for (const note of notes) {
+    if (note.fields?.archived) continue;
+    const recordId = note.metadata?.source?.recordId;
+    if (!recordId) continue;
+    const parsed = parseDealRecordId(recordId);
+    if (!parsed) continue;
+    let inner = index.get(parsed.dealId);
+    if (!inner) {
+      inner = new Map();
+      index.set(parsed.dealId, inner);
+    }
+    // First-write wins so the dedup result is stable across runs even when
+    // (defensively) PB returns more than one note for the same recordId.
+    if (!inner.has(parsed.companyKey)) inner.set(parsed.companyKey, note);
+  }
+  return index;
 }
 
 export function findExistingDealNote(
-  _dealId: string,
-  _companyKey: string | null,
-  _index: DealNoteIndex
+  dealId: string,
+  companyKey: string | null,
+  index: DealNoteIndex
 ): ProductboardNote | undefined {
-  // Implemented in Phase 4 — `index.get(dealId)?.get(companyKey)`.
-  throw new Error('findExistingDealNote not yet implemented (lands in Phase 4)');
+  return index.get(dealId)?.get(companyKey);
 }

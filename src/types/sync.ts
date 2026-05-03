@@ -145,9 +145,27 @@ export interface SyncStats {
   // resolves an HS email that is NOT in the PB workspace member set, so the
   // owner field gets dropped pre-flight. Used by both companies and deals.
   ownerSkipped?: number;
+  // Phase 4: count of tag names the run requested but PB's tag list didn't
+  // contain. PB's tag-value provisioning POST currently 500s (see
+  // feedback_pb_tag_provisioning_unavailable.md), so unknown names are dropped
+  // from the note write rather than failing it. The dropped names land in
+  // `SyncRun.warnings` so the user can pre-seed them in PB.
+  tagsDropped?: number;
 }
 
 export interface SyncRunError {
+  hsId: string | null;
+  name: string;
+  detail: string;
+}
+
+// Phase 4 — non-fatal advisories surfaced in History. `errors` reflects
+// failed writes; `warnings` covers things that succeeded but lost data the
+// user might want to act on (e.g. PB tag names that are missing from the
+// workspace and got dropped from a note write because PB's tag-value POST
+// currently returns HTTP 500). Kept distinct from errors so the run status
+// stays `success` when only warnings are present.
+export interface SyncRunWarning {
   hsId: string | null;
   name: string;
   detail: string;
@@ -181,6 +199,7 @@ export interface SyncRun {
   mode: SyncMode;
   stats: SyncStats;
   errors: SyncRunError[];
+  warnings?: SyncRunWarning[];
   debugLogs?: SyncDebugLog[];
   resolvedViaFallback?: number;
   // Set when status === 'skipped'. Surfaces *why* the run was a no-op (e.g.
