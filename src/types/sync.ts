@@ -91,6 +91,9 @@ export interface HubSpotConfig {
   connectedAt?: string;
   // Server-only: never sent to the browser.
   tokenSecretName?: string;
+  // Server-only: last 4 chars of the raw token, captured at save time so the UI
+  // preview reflects the actual token rather than the secret resource path.
+  tokenLast4?: string;
   // Browser-safe display only. Populated by the route handler before responding.
   tokenMasked?: string;
 }
@@ -101,6 +104,9 @@ export interface ProductboardConfig {
   connectedAt?: string;
   // Server-only: never sent to the browser.
   tokenSecretName?: string;
+  // Server-only: last 4 chars of the raw token, captured at save time so the UI
+  // preview reflects the actual token rather than the secret resource path.
+  tokenLast4?: string;
   // Browser-safe display only. Populated by the route handler before responding.
   tokenMasked?: string;
 }
