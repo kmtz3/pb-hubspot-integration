@@ -82,6 +82,7 @@ if (process.env.NODE_ENV !== 'production') {
   // Dev-only client-error logger – writes JSON lines to /tmp/pb-debug.log
   // so render errors caught by the React ErrorBoundary land in a tail-able file.
   // Remove once the bug is diagnosed.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs') as typeof import('fs');
   const DEBUG_LOG_PATH = '/tmp/pb-debug.log';
   app.post('/api/debug/log', (req, res) => {
