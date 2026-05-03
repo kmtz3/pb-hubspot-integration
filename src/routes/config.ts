@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ConfigPatchBodySchema } from '../lib/schemas';
 import {
   getSyncConfig,
   updateSyncConfig,
@@ -56,11 +57,20 @@ function detectLegacyShape(body: Partial<AppConfig> & { accountFilter?: unknown 
 }
 
 router.patch('/', async (req, res) => {
-  const body = req.body as Partial<AppConfig> & { accountFilter?: unknown };
-  const legacy = detectLegacyShape(body);
+  // Check legacy shapes on the raw body before Zod strips unknown keys, so
+  // old clients get a specific migration error rather than a generic 400.
+  const legacy = detectLegacyShape(req.body as Partial<AppConfig> & { accountFilter?: unknown });
   if (legacy) {
     return res.status(400).json({ error: legacy });
   }
+
+  const parsed = ConfigPatchBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.issues.map(i => i.message) });
+  }
+  // Zod's inferred partial schedule type is slightly wider than SyncConfigUpdate;
+  // the runtime shape is valid and the cast is safe.
+  const body = parsed.data as Partial<AppConfig> & { accountFilter?: unknown };
 
   try {
     const currentSync = await getSyncConfig();

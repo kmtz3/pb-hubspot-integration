@@ -140,6 +140,24 @@ export async function withRetry<T>(
     }
 
     if (res.status >= 200 && res.status < 300) {
+      // Proactive throttle: check headers before returning so the caller's next
+      // request doesn't start from a depleted quota bucket.
+      const hsInfo = parseHubSpotHeaders(res.headers);
+      if (shouldBackOffHubSpot(hsInfo)) {
+        // Sleep for the per-request share of the rate-limit window so remaining
+        // calls are spread evenly across the budget. Cap at 1 s to avoid stalling
+        // small windows with low max values.
+        const perReqMs =
+          hsInfo.intervalMs !== null && hsInfo.max !== null && hsInfo.max > 0
+            ? Math.min(Math.round(hsInfo.intervalMs / hsInfo.max), 1000)
+            : 500;
+        await sleep(perReqMs);
+      } else {
+        const pbInfo = parsePBHeaders(res.headers);
+        if (shouldBackOffPB(pbInfo)) {
+          await sleep(200);
+        }
+      }
       return res.data;
     }
 

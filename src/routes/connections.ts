@@ -4,6 +4,7 @@ import { getSecret, writeSecret } from '../lib/secrets';
 import { getAccountInfo, checkScopes } from '../sync/hubspot';
 import { checkScopes as checkPBScopes } from '../sync/productboard';
 import type { HubSpotConfig, ProductboardConfig } from '../types/sync';
+import { TokenBodySchema } from '../lib/schemas';
 
 export const router = Router();
 
@@ -33,8 +34,9 @@ router.get('/', async (_req, res) => {
 });
 
 router.post('/hubspot', async (req, res) => {
-  const { token } = req.body as { token?: string };
-  if (!token) return res.status(400).json({ error: 'token is required' });
+  const parsed = TokenBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'token is required' });
+  const { token } = parsed.data;
 
   try {
     const [{ portalId, hubName }, scopes] = await Promise.all([
@@ -65,8 +67,9 @@ router.post('/hubspot', async (req, res) => {
 });
 
 router.post('/productboard', async (req, res) => {
-  const { token } = req.body as { token?: string };
-  if (!token) return res.status(400).json({ error: 'token is required' });
+  const parsed = TokenBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'token is required' });
+  const { token } = parsed.data;
 
   try {
     const { workspaceName, scopes } = await checkPBScopes(token);

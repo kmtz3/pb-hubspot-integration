@@ -313,6 +313,15 @@ resource "google_project_iam_member" "sync_scheduler_admin" {
   member  = "serviceAccount:${google_service_account.sync_sa.email}"
 }
 
+# sync_sa must be able to "act as" scheduler_sa when creating/updating the
+# Cloud Scheduler job that uses scheduler_sa for its OIDC token. Without this,
+# the createJob / updateJob call fails with iam.serviceAccounts.actAs DENIED.
+resource "google_service_account_iam_member" "sync_sa_act_as_scheduler_sa" {
+  service_account_id = google_service_account.scheduler_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.sync_sa.email}"
+}
+
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 output "service_url" {
