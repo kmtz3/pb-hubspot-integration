@@ -319,7 +319,7 @@ describe('runSync — dispatcher (Phase 1)', () => {
     // pipeline configured in the deals filter, the deals path emits a
     // skipped run, which is the right shape for the dispatcher assertion.
     const { getDealsFilter, getDealsFieldMappings } = jest.requireMock('../../src/lib/firestore');
-    getDealsFilter.mockResolvedValue({ pipelineId: '', stageIds: [], filterGroups: [] });
+    getDealsFilter.mockResolvedValue({ pipelineId: null, stageIds: [], filterGroups: [] });
     getDealsFieldMappings.mockResolvedValue({ tags: [], body: [], rules: [], staticTags: [] });
 
     await runSync({ trigger: 'scheduler', runId: 'r-dispatch-deals', objectType: 'deals' });

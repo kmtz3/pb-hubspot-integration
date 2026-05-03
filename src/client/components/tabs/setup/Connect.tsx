@@ -102,8 +102,12 @@ function ConnectionCard({
   const [token, setToken] = useState('');
   const connected = config?.connected ?? false;
 
+  useEffect(() => {
+    if (!connected) setToken('');
+  }, [connected]);
+
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20, flex: 1 }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20, flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <img src={logoSrc} width={24} height={24} alt={title} />
         <span style={{ fontWeight: 700, fontSize: 15 }}>{title}</span>
@@ -187,7 +191,26 @@ function ConnectionCard({
         </>
       ) : (
         <>
-          <div style={{ marginBottom: 12 }}>
+          <input
+            type="password"
+            placeholder={`Paste ${title} token`}
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button
+              disabled={!token || isPending}
+              onClick={() => onConnect(token)}
+              style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: !token || isPending ? 0.6 : 1 }}>
+              {isPending ? 'Connecting…' : 'Connect'}
+            </button>
+            <a href={setupGuideUrl} target="_blank" rel="noreferrer"
+               style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '7px 12px', fontSize: 13, textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center' }}>
+              Setup guide ↗
+            </a>
+          </div>
+          <div>
             <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>Required scopes:</div>
             <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--muted-foreground)' }}>
               {scopes.map(s => <li key={s}><code>{s}</code></li>)}
@@ -202,25 +225,6 @@ function ConnectionCard({
                 </ul>
               </div>
             ))}
-          </div>
-          <input
-            type="password"
-            placeholder={`Paste ${title} token`}
-            value={token}
-            onChange={e => setToken(e.target.value)}
-            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }}
-          />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              disabled={!token || isPending}
-              onClick={() => onConnect(token)}
-              style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: !token || isPending ? 0.6 : 1 }}>
-              {isPending ? 'Connecting…' : 'Connect'}
-            </button>
-            <a href={setupGuideUrl} target="_blank" rel="noreferrer"
-               style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '7px 12px', fontSize: 13, textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center' }}>
-              Setup guide ↗
-            </a>
           </div>
         </>
       )}

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { X, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useConfig, useSaveConfig, useHSProperties, useFilterPreview } from '../../../hooks/api';
 import { OPERATORS_BY_TYPE, OPERATOR_LABELS } from '../../../constants/operators';
 import type { HubSpotFilter } from '../../../../types/hubspot';
 import InlineAlert from '../../ui/InlineAlert';
+import SearchableSelect from '../../ui/SearchableSelect';
+import MultiCheckSelect from '../../ui/MultiCheckSelect';
 
 interface FilterFormValues {
   enabled: boolean;
@@ -30,10 +32,16 @@ export default function FilterAccounts() {
   useEffect(() => {
     if (config?.filters?.companies && hsProps && !initialized.current) {
       initialized.current = true;
-      reset({
-        enabled: config.filters.companies.enabled,
-        filters: config.filters.companies.filterGroups[0]?.filters ?? [],
+      const raw = config.filters.companies.filterGroups[0]?.filters ?? [];
+      // Backward compat: old IN/NOT_IN filters stored value (single string),
+      // not values (array). Seed values from value so checkboxes render correctly.
+      const filters = raw.map((f: any) => {
+        if ((f.operator === 'IN' || f.operator === 'NOT_IN') && f.value && !f.values?.length) {
+          return { ...f, values: [f.value], value: '' };
+        }
+        return f;
       });
+      reset({ enabled: config.filters.companies.enabled, filters });
     }
   }, [config?.filters?.companies, hsProps, reset]);
 
@@ -60,6 +68,27 @@ export default function FilterAccounts() {
 
   const getPropertyType = useCallback((propName: string): string => {
     return hsProps?.find(p => p.name === propName)?.type ?? 'string';
+  }, [hsProps]);
+
+  const propGroups = useMemo(() => {
+    const props = hsProps ?? [];
+    const TYPE_ORDER = ['string', 'enumeration', 'number', 'date', 'datetime', 'bool', 'phone_number'];
+    const TYPE_LABELS: Record<string, string> = {
+      string: 'Text', enumeration: 'Select', number: 'Number',
+      date: 'Date', datetime: 'Date & Time', bool: 'Boolean', phone_number: 'Phone',
+    };
+    const grouped: Record<string, typeof props> = {};
+    for (const p of props) {
+      const t = (p.type as string) || 'other';
+      (grouped[t] ??= []).push(p);
+    }
+    const result = TYPE_ORDER
+      .filter(t => grouped[t]?.length)
+      .map(t => ({ type: t, label: TYPE_LABELS[t] ?? t, items: grouped[t]! }));
+    for (const t of Object.keys(grouped).sort()) {
+      if (!TYPE_ORDER.includes(t)) result.push({ type: t, label: t, items: grouped[t]! });
+    }
+    return result;
   }, [hsProps]);
 
   const onSave = handleSubmit(async (values) => {
@@ -140,35 +169,68 @@ export default function FilterAccounts() {
           const selectedProp = hsProps?.find(p => p.name === currentFilters[idx]?.propertyName);
 
           return (
-            <div key={field.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div key={field.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: 'var(--muted-foreground)', width: 38, textAlign: 'right', flexShrink: 0, marginRight: 8 }}>
                 {idx === 0 ? 'WHERE' : 'AND'}
               </span>
 
               {/* Property select */}
-              <select {...register(`filters.${idx}.propertyName`)}
-                style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, width: 220 }}>
-                <option value="">Select property…</option>
-                {(hsProps ?? []).map(p => (
-                  <option key={p.name} value={p.name}>{p.label}</option>
-                ))}
-              </select>
+              <div style={{ width: 220, flexShrink: 0 }}>
+                <Controller control={control} name={`filters.${idx}.propertyName`} render={({ field: f }) => (
+                  <SearchableSelect
+                    value={f.value ?? ''}
+                    onChange={f.onChange}
+                    groups={propGroups}
+                    getKey={(p: any) => p.name}
+                    getLabel={(p: any) => p.label ?? p.name}
+                    getSubLabel={(p: any) => (p.label && p.label !== p.name) ? p.name : null}
+                    getSearchText={(p: any) => p.name}
+                    placeholder="Select property…"
+                    searchPlaceholder="Search properties…"
+                  />
+                )} />
+              </div>
 
               {/* Operator select */}
-              <select {...register(`filters.${idx}.operator`)}
-                style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, width: 200 }}>
-                {operators.map(op => (
-                  <option key={op} value={op}>{OPERATOR_LABELS[op] ?? op}</option>
-                ))}
-              </select>
+              <Controller control={control} name={`filters.${idx}.operator`} render={({ field: f }) => (
+                <select
+                  value={f.value}
+                  onChange={e => {
+                    const next = e.target.value;
+                    const wasMulti = f.value === 'IN' || f.value === 'NOT_IN';
+                    const isMulti = next === 'IN' || next === 'NOT_IN';
+                    f.onChange(next);
+                    if (wasMulti && !isMulti) setValue(`filters.${idx}.values`, []);
+                    if (!wasMulti && isMulti) setValue(`filters.${idx}.value`, '');
+                  }}
+                  style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, minWidth: 100, flex: '0 1 160px' }}>
+                  {operators.map(op => (
+                    <option key={op} value={op}>{OPERATOR_LABELS[op] ?? op}</option>
+                  ))}
+                </select>
+              )} />
 
               {/* Value input */}
               {!hideValue && (
-                selectedProp?.options?.length ? (
+                (op === 'IN' || op === 'NOT_IN') ? (
+                  selectedProp?.options?.length ? (
+                    <Controller control={control} name={`filters.${idx}.values`} render={({ field: f }) => (
+                      <MultiCheckSelect
+                        options={selectedProp.options!.map((o: any) => ({ value: o.value, label: o.label }))}
+                        selected={f.value ?? []}
+                        onChange={f.onChange}
+                      />
+                    )} />
+                  ) : (
+                    <input {...register(`filters.${idx}.value`)}
+                      placeholder="Values (comma-separated)"
+                      style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, flex: 1 }} />
+                  )
+                ) : selectedProp?.options?.length ? (
                   <select {...register(`filters.${idx}.value`)}
                     style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', fontSize: 13, flex: 1 }}>
                     <option value="">Select value…</option>
-                    {selectedProp.options.map(o => (
+                    {selectedProp.options.map((o: any) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
@@ -230,6 +292,11 @@ export default function FilterAccounts() {
                 width: `${Math.round(preview.data.count / Math.max(preview.data.total, 1) * 100)}%`,
               }} />
             </div>
+          </div>
+        )}
+        {preview.isError && (
+          <div style={{ fontSize: 12, color: 'var(--destructive)', marginBottom: 8 }}>
+            Preview failed — check your conditions and try again.
           </div>
         )}
         <button

@@ -66,7 +66,8 @@ export interface FilterGroup {
 }
 
 export interface DealsFilter {
-  pipelineId: string;
+  /** null = never configured (skip run); '' = all pipelines; '<id>' = specific pipeline */
+  pipelineId: string | null;
   stageIds: string[];
   filterGroups: FilterGroup[];
 }

@@ -305,7 +305,7 @@ export async function runDealsSync(options: RunSyncOptions): Promise<SyncStats> 
       getHubSpotConfig(),
     ]);
 
-    if (!dealsFilter.pipelineId) {
+    if (dealsFilter.pipelineId === null) {
       // No pipeline configured — nothing to sync. Emit a skipped run so the
       // UI surfaces the misconfiguration instead of silently producing zero
       // results in a `success` row.

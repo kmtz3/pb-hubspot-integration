@@ -4,8 +4,63 @@ import { Plus, Trash2, GripVertical, CheckCircle, AlertTriangle, X } from 'lucid
 import { useConfig, useSaveConfig, useHSDealProperties, usePbTags } from '../../../hooks/api';
 import RuleBuilder, { TAG_DATALIST_ID } from '../../ui/RuleBuilder';
 import InlineAlert from '../../ui/InlineAlert';
+import SearchableSelect from '../../ui/SearchableSelect';
 import type { TagMapping, BodyMapping, TagRule, DealsFieldMappings } from '../../../../types/sync';
 import type { HubSpotProperty } from '../../../../types/hubspot';
+
+// ── Type grouping helpers (mirrors accounts/MapFields) ────────────────────────
+
+const HS_TYPE_ORDER = [
+  'text', 'richtext', 'phone', 'number', 'select', 'multiselect', 'boolean', 'date',
+] as const;
+
+const HS_TYPE_LABELS: Record<string, string> = {
+  text: 'Text',
+  richtext: 'Rich text',
+  phone: 'Phone',
+  number: 'Number',
+  select: 'Single-select',
+  multiselect: 'Multi-select',
+  boolean: 'Boolean',
+  date: 'Date',
+};
+
+function hsLogicalType(p: { type?: string; fieldType?: string } | undefined): string | null {
+  if (!p?.type) return null;
+  const t = p.type, ft = (p.fieldType ?? '').toLowerCase();
+  if (t === 'enumeration') return ft === 'checkbox' ? 'multiselect' : 'select';
+  if (t === 'string') return (ft === 'textarea' || ft === 'html' || ft === 'richtext') ? 'richtext' : 'text';
+  if (t === 'phone_number') return 'phone';
+  if (t === 'number') return 'number';
+  if (t === 'bool') return 'boolean';
+  if (t === 'date' || t === 'datetime') return 'date';
+  return null;
+}
+
+function hsGroupKey(p: { type?: string; fieldType?: string } | undefined): string {
+  if (p?.type === 'phone_number') return 'phone';
+  return hsLogicalType(p) || 'other';
+}
+
+function groupByType<T>(
+  items: T[],
+  getType: (x: T) => string | null | undefined,
+  order: readonly string[],
+): Array<[string, T[]]> {
+  const groups: Record<string, T[]> = {};
+  for (const it of items) {
+    const t = getType(it) || 'other';
+    (groups[t] ??= []).push(it);
+  }
+  const ordered: Array<[string, T[]]> = [];
+  for (const t of order) if (groups[t]?.length) ordered.push([t, groups[t]!]);
+  for (const t of Object.keys(groups).sort()) {
+    if (!order.includes(t as never)) ordered.push([t, groups[t]!]);
+  }
+  return ordered;
+}
+
+// ── Form types ────────────────────────────────────────────────────────────────
 
 interface MapFieldsForm {
   tags: TagMapping[];
@@ -112,7 +167,7 @@ export default function DealsMapFields() {
     const d = config.fieldMappings.deals as DealsFieldMappings;
     reset({
       tags: d.tags ?? [],
-      body: (d.body ?? []).sort((a, b) => a.order - b.order),
+      body: (d.body ?? []).filter(b => b.hsField).sort((a, b) => a.order - b.order),
       rules: d.rules?.length ? d.rules : DEFAULT_RULES,
       staticTags: d.staticTags ?? [],
     });
@@ -130,6 +185,11 @@ export default function DealsMapFields() {
 
   const staticTags = watch('staticTags');
   const watchedRules = watch('rules');
+  const watchedBody = watch('body');
+
+  const usedBodyFields = new Set(
+    watchedBody.map(b => b?.hsField).filter(Boolean) as string[]
+  );
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -142,7 +202,7 @@ export default function DealsMapFields() {
   }, [saveConfig.isSuccess, saveConfig.isError, saveConfig.reset]);
 
   const onSave = handleSubmit(async values => {
-    const ordered = values.body.map((b, i) => ({ ...b, order: i }));
+    const ordered = values.body.filter(b => b.hsField).map((b, i) => ({ ...b, order: i }));
     await saveConfig.mutateAsync({
       fieldMappings: {
         deals: {
@@ -351,10 +411,10 @@ export default function DealsMapFields() {
           ) : (
             <>
               {/* Table header */}
-              <div style={{ display: 'grid', gridTemplateColumns: '28px 32px 1fr 160px 140px 32px', gap: 8, padding: '6px 4px', marginBottom: 4, fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.04em', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '28px 32px 1fr 160px 60px 32px', gap: 8, padding: '6px 4px', marginBottom: 4, fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.04em', alignItems: 'center' }}>
                 <span />
                 <span />
-                <span>Field / label</span>
+                <span>HubSpot field</span>
                 <span>Style</span>
                 <span>Enabled</span>
                 <span />
@@ -362,6 +422,18 @@ export default function DealsMapFields() {
 
               {bodyFields.map((field, idx) => {
                 const isDragOver = overIndex === idx && dragIndex !== null && dragIndex !== idx;
+                const currentHsField = watchedBody[idx]?.hsField ?? '';
+
+                const availableProps = hsProps.filter(p =>
+                  p.name === currentHsField || !usedBodyFields.has(p.name)
+                );
+                const grouped = groupByType(availableProps, p => hsGroupKey(p), HS_TYPE_ORDER);
+                const groups = grouped.map(([type, items]) => ({
+                  type,
+                  label: HS_TYPE_LABELS[type] ?? type,
+                  items,
+                }));
+
                 return (
                   <div
                     key={field.id}
@@ -376,7 +448,7 @@ export default function DealsMapFields() {
                     onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '28px 32px 1fr 160px 140px 32px',
+                      gridTemplateColumns: '28px 32px 1fr 160px 60px 32px',
                       gap: 8, padding: '8px 4px', alignItems: 'center',
                       borderRadius: 6,
                       background: isDragOver ? 'var(--accent)' : dragIndex === idx ? 'var(--muted)' : 'transparent',
@@ -395,17 +467,36 @@ export default function DealsMapFields() {
                       {idx + 1}
                     </div>
 
-                    {/* Field + label */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)', fontFamily: 'var(--font-mono)' }}>
-                        {field.hsField}
-                      </div>
-                      <input
-                        {...register(`body.${idx}.label`)}
-                        placeholder="Custom label (optional)"
-                        style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, width: '100%' }}
-                      />
-                    </div>
+                    {/* Field picker */}
+                    <Controller
+                      control={control}
+                      name={`body.${idx}.hsField`}
+                      render={({ field: f }) => (
+                        <SearchableSelect
+                          value={f.value ?? ''}
+                          onChange={next => {
+                            f.onChange(next);
+                            const picked = hsProps.find(p => p.name === next);
+                            if (picked) {
+                              const currentLabel = watchedBody[idx]?.label ?? '';
+                              const prevProp = hsProps.find(p => p.name === f.value);
+                              // Auto-set label from HS prop label if it's blank or
+                              // still matching the previous prop's label (not user-edited).
+                              if (!currentLabel || currentLabel === prevProp?.label) {
+                                setValue(`body.${idx}.label`, picked.label ?? '');
+                              }
+                            }
+                          }}
+                          groups={groups}
+                          getKey={p => p.name}
+                          getLabel={p => p.label ?? p.name}
+                          getSubLabel={p => (p.label && p.label !== p.name ? p.name : null)}
+                          getSearchText={p => p.name ?? ''}
+                          placeholder="Select a field…"
+                          searchPlaceholder="Search deal properties…"
+                        />
+                      )}
+                    />
 
                     {/* Style select */}
                     <select
@@ -434,11 +525,7 @@ export default function DealsMapFields() {
 
               <button
                 type="button"
-                onClick={() => {
-                  const propNames = hsProps.map(p => p.name);
-                  const first = propNames.find(n => !bodyFields.some(f => f.hsField === n)) ?? '';
-                  appendBody({ hsField: first, label: '', style: 'metadata', order: bodyFields.length, enabled: true });
-                }}
+                onClick={() => appendBody({ hsField: '', label: '', style: 'metadata', order: bodyFields.length, enabled: true })}
                 style={{ ...addBtnStyle, marginTop: 8 }}
               >
                 <Plus size={14} /> Add field

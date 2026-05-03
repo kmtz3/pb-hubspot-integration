@@ -457,7 +457,7 @@ export function defaultFieldMappingsDoc(): FieldMappingsDoc {
 }
 
 function defaultDealsFilter(): DealsFilter {
-  return { pipelineId: '', stageIds: [], filterGroups: [] };
+  return { pipelineId: null, stageIds: [], filterGroups: [] };
 }
 
 export function defaultFiltersDoc(): FiltersDoc {

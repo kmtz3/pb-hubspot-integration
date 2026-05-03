@@ -134,6 +134,22 @@ describe('fetchDeals filter group construction', () => {
     expect(body.filterGroups[0].filters.some(f => f.propertyName === 'amount')).toBe(true);
     expect(body.filterGroups[1].filters.some(f => f.propertyName === 'amount')).toBe(true);
   });
+
+  it('omits pipeline filter when pipelineId is null (all pipelines)', async () => {
+    const calls = mockFetchCapture();
+    await fetchDeals({ pipelineId: null });
+
+    const filters = (calls[0] as { filterGroups: Array<{ filters: Array<{ propertyName: string }> }> }).filterGroups[0].filters;
+    expect(filters.every(f => f.propertyName !== 'pipeline')).toBe(true);
+  });
+
+  it('omits pipeline filter when pipelineId is empty string (all pipelines)', async () => {
+    const calls = mockFetchCapture();
+    await fetchDeals({ pipelineId: '' });
+
+    const filters = (calls[0] as { filterGroups: Array<{ filters: Array<{ propertyName: string }> }> }).filterGroups[0].filters;
+    expect(filters.every(f => f.propertyName !== 'pipeline')).toBe(true);
+  });
 });
 
 // ── fetchDeals: backfill window filter shapes ────────────────────────────────

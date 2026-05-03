@@ -9,6 +9,21 @@ const BASE = 'https://api.hubapi.com';
 const BACKOFF_PAUSE_MS = 200;
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
+// HubSpot requires `values: string[]` for IN / NOT_IN operators, not `value`.
+// Old saved filters (pre-fix) only have `value`; this converts them in-memory
+// before they reach the API. Also handles comma-separated text inputs.
+function normalizeFilters(filters: HubSpotFilter[]): HubSpotFilter[] {
+  return filters.map(f => {
+    if (f.operator !== 'IN' && f.operator !== 'NOT_IN') return f;
+    if (f.values?.length) return f;
+    if (f.value) {
+      const { value, ...rest } = f;
+      return { ...rest, values: value.split(',').map(v => v.trim()).filter(Boolean) };
+    }
+    return f;
+  });
+}
+
 // Token resolution order:
 //   1. HUBSPOT_API_KEY env var — ops escape hatch in any environment.
 //   2. tokenSecretName on the Firestore connection doc (production: a Secret
@@ -64,11 +79,12 @@ export async function fetchCompanies(options: {
     : null;
 
   const effectiveFilterGroups: HubSpotFilterGroup[] = (() => {
-    if (filterGroups.length === 0) {
+    const normalized = filterGroups.map(g => ({ filters: normalizeFilters(g.filters) }));
+    if (normalized.length === 0) {
       return incremental ? [{ filters: [incremental] }] : [];
     }
-    if (!incremental) return filterGroups;
-    return filterGroups.map(g => ({ filters: [...g.filters, incremental] }));
+    if (!incremental) return normalized;
+    return normalized.map(g => ({ filters: [...g.filters, incremental] }));
   })();
 
   const companies: HubSpotCompany[] = [];
@@ -198,14 +214,17 @@ const SCOPE_PROBES: Array<{
   },
   {
     scope: 'crm.objects.deals.read',
-    probe: '/crm/v3/objects/deals?limit=1',
+    // /crm/v3/objects/deals?limit=1 returns 200 even without this scope (HubSpot quirk);
+    // pipelines is the first endpoint the deals flow actually calls and correctly 403s.
+    probe: '/crm/v3/pipelines/deals',
     required: false,
     group: 'deals',
     description: 'Read HubSpot deal records (required for Deals sync)',
   },
   {
     scope: 'crm.schemas.deals.read',
-    probe: '/crm/v3/properties/deals?limit=1',
+    // ?limit=1 on the properties endpoint returns 200 without the scope; use the bare path.
+    probe: '/crm/v3/properties/deals',
     required: false,
     group: 'deals',
     description: 'Read deal property metadata for field mapping',
@@ -267,7 +286,7 @@ export async function fetchDealPipelines(): Promise<HubSpotPipeline[]> {
 // user group; the window filter is appended the same way.
 export async function fetchDeals(opts: {
   filterGroups?: HubSpotFilterGroup[];
-  pipelineId: string;
+  pipelineId: string | null;
   stageIds?: string[];
   properties?: string[];
   lastSyncAt?: number | null;
@@ -287,7 +306,7 @@ export async function fetchDeals(opts: {
   } = opts;
 
   const mandatoryFilters: HubSpotFilter[] = [
-    { propertyName: 'pipeline', operator: 'EQ', value: pipelineId },
+    ...(pipelineId ? [{ propertyName: 'pipeline', operator: 'EQ' as const, value: pipelineId }] : []),
     ...(stageIds && stageIds.length > 0
       ? [{ propertyName: 'dealstage', operator: 'IN' as const, values: stageIds }]
       : []),
@@ -310,7 +329,7 @@ export async function fetchDeals(opts: {
   const effectiveFilterGroups: HubSpotFilterGroup[] = baseGroups.map(g => ({
     filters: [
       ...mandatoryFilters,
-      ...g.filters,
+      ...normalizeFilters(g.filters),
       ...(windowFilter ? [windowFilter] : []),
     ],
   }));

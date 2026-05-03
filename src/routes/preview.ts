@@ -9,6 +9,24 @@ import type { ObjectType } from '../types/sync';
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+function normalizeFilters(filters: HubSpotFilter[]): HubSpotFilter[] {
+  return filters.map(f => {
+    if (f.operator !== 'IN' && f.operator !== 'NOT_IN') return f;
+    if (f.values?.length) {
+      // HubSpot rejects IN/NOT_IN filters that carry both value and values.
+      // Strip the stray empty value field that the form leaves behind when
+      // the user switches to a multi-select operator.
+      const { value: _v, ...rest } = f;
+      return rest;
+    }
+    if (f.value) {
+      const { value, ...rest } = f;
+      return { ...rest, values: value.split(',').map(v => v.trim()).filter(Boolean) };
+    }
+    return f;
+  });
+}
+
 export const router = Router();
 export const hsPropertiesRouter = Router();
 export const pbFieldsRouter = Router();
@@ -35,7 +53,7 @@ router.post('/preview', async (req, res) => {
       const resp = await fetch('https://api.hubapi.com/crm/v3/objects/deals/search', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filterGroups: [{ filters }], properties: ['dealname'], limit: 1 }),
+        body: JSON.stringify({ filterGroups: [{ filters: normalizeFilters(filters) }], properties: ['dealname'], limit: 1 }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({})) as { message?: string };
@@ -54,7 +72,7 @@ router.post('/preview', async (req, res) => {
   try {
     const token = await getHubSpotToken();
     const payload = {
-      filterGroups: [{ filters }],
+      filterGroups: [{ filters: normalizeFilters(filters) }],
       properties: ['name'],
       limit: 1,
     };
@@ -97,7 +115,8 @@ hsPropertiesRouter.get('/properties', async (req, res) => {
       );
     } catch (err) {
       console.error('[hs-deal-properties] fetch failed:', err);
-      res.status(500).json({ error: 'Failed to fetch HubSpot deal properties' });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: 'Failed to fetch HubSpot deal properties', detail: msg });
     }
     return;
   }
@@ -141,7 +160,8 @@ hsPropertiesRouter.get('/pipelines', async (req, res) => {
     );
   } catch (err) {
     console.error('[hs-deal-pipelines] fetch failed:', err);
-    res.status(500).json({ error: 'Failed to fetch HubSpot deal pipelines' });
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: 'Failed to fetch HubSpot deal pipelines', detail: msg });
   }
 });
 
