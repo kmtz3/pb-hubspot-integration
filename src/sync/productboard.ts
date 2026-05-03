@@ -445,12 +445,22 @@ export async function getOrCreateUnassignedCompany(): Promise<{ pbUuid: string }
   const RECORD_ID = 'unassigned-placeholder';
   type Page = { data: PBEntity[]; links?: { next?: string | null } };
 
-  // Lookup by metadata.source filter (PB honors this for entities, not just
-  // notes — live-verified the same way the dedup walk does).
-  const lookupUrl =
-    `/v2/entities?type[]=company&metadata[source][system]=hubspot&metadata[source][recordId]=${encodeURIComponent(RECORD_ID)}`;
-  const page = await withRetry(() => pbRequest<Page>(lookupUrl));
-  const existing = page.data?.[0];
+  // PB rejects metadata[source][recordId] as a GET query param on /v2/entities
+  // (HTTP 400 "unexpected"). POST /v2/entities/search accepts it in the body.
+  const searchResult = await withRetry(() =>
+    pbRequest<Page>('/v2/entities/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        data: {
+          filter: {
+            type: ['company'],
+            metadata: { source: { system: 'hubspot', recordId: RECORD_ID } },
+          },
+        },
+      }),
+    })
+  );
+  const existing = searchResult.data?.[0];
   if (existing) return { pbUuid: existing.id };
 
   const created = await createEntity({
