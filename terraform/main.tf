@@ -13,6 +13,21 @@ provider "google" {
   region  = var.region
 }
 
+# Look up the project number — Cloud Run v2 deterministic URLs use the
+# numeric project id, not the slug. Computed once and reused below.
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
+locals {
+  # Cloud Run v2 deterministic service URL:
+  # https://<service-name>-<project-number>.<region>.run.app
+  # Computing this from inputs (instead of `google_cloud_run_v2_service.sync.uri`)
+  # avoids the self-reference cycle on `SCHEDULER_OIDC_AUDIENCE`, where the
+  # service env var would otherwise depend on the service's own attributes.
+  service_url = "https://${var.service_name}-${data.google_project.current.number}.${var.region}.run.app"
+}
+
 # ── Enable APIs ───────────────────────────────────────────────────────────────
 
 resource "google_project_service" "run" {
@@ -161,7 +176,7 @@ resource "google_cloud_run_v2_service" "sync" {
       }
       env {
         name  = "SCHEDULER_OIDC_AUDIENCE"
-        value = "https://sync-${var.project_id}.a.run.app"
+        value = local.service_url
       }
 
       # Secrets injected as env vars at runtime.
@@ -259,7 +274,7 @@ resource "google_cloud_scheduler_job" "sync" {
 
   http_target {
     http_method = "POST"
-    uri         = "${"https://sync-${var.project_id}.a.run.app"}/api/sync/run"
+    uri         = "${local.service_url}/api/sync/run"
     body        = base64encode(jsonencode({ trigger = "scheduler" }))
     headers = {
       "Content-Type" = "application/json"
@@ -267,7 +282,7 @@ resource "google_cloud_scheduler_job" "sync" {
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email
-      audience              = "https://sync-${var.project_id}.a.run.app"
+      audience              = local.service_url
     }
   }
 
@@ -287,8 +302,8 @@ resource "google_project_iam_member" "sync_scheduler_admin" {
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 output "service_url" {
-  description = "Cloud Run service URL"
-  value       = "https://sync-${var.project_id}.a.run.app"
+  description = "Cloud Run service URL (v2 deterministic format)"
+  value       = local.service_url
 }
 
 output "scheduler_job_name" {
