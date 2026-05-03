@@ -115,11 +115,16 @@ export default function FilterAccounts() {
       </div>
 
       {currentFilters.length > 0 && !enabled && (
-        <div style={{ marginBottom: 16 }}>
-          <InlineAlert variant="warning">
-            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1, marginRight: 4 }} />
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 16px', marginBottom: 16,
+          background: 'oklch(97% 0.07 90)', border: '1px solid oklch(80% 0.14 85)',
+          borderRadius: 8, color: 'oklch(40% 0.14 40)',
+        }}>
+          <AlertTriangle size={18} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+          <div style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>
             Filters saved but not active — toggle on to apply, or clear all conditions to sync everything.
-          </InlineAlert>
+          </div>
         </div>
       )}
 
