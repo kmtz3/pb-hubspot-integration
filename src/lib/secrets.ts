@@ -16,7 +16,16 @@ async function getProjectId(): Promise<string> {
     cachedProjectId = explicit;
     return explicit;
   }
-  cachedProjectId = await getClient().getProjectId();
+  
+  const detected = await getClient().getProjectId();
+  if (process.env.NODE_ENV === 'production' && detected === 'demo-local') {
+    throw new Error(
+      'Project ID resolved to "demo-local" in production. ' +
+      'Ensure GCP_PROJECT_ID is set correctly in Cloud Run environment variables.'
+    );
+  }
+
+  cachedProjectId = detected;
   return cachedProjectId;
 }
 
@@ -29,6 +38,11 @@ export async function getSecret(secretName: string): Promise<string> {
   //    names and would trigger PERMISSION_DENIED if passed to accessSecretVersion.
   const looksLikeResourceName = secretName.startsWith('projects/');
   if (!looksLikeResourceName) return secretName;
+
+  if (process.env.NODE_ENV === 'production' && secretName.includes('/projects/demo-local/')) {
+    console.warn(`[secrets] Stale local secret detected in production: ${secretName}. Returning placeholder to allow UI recovery.`);
+    return 'STALE_LOCAL_SECRET';
+  }
 
   const cached = cache.get(secretName);
   if (cached) return cached;

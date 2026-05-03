@@ -444,20 +444,36 @@ See [terraform/main.tf](terraform/main.tf) and [cloudbuild.yaml](cloudbuild.yaml
 
 If you previously pushed images to `gcr.io/PROJECT_ID/pb-hubspot-sync:latest` (the old Path A flow), they're now orphaned. After confirming the Cloud Build trigger is producing successful deploys:
 
+First confirm the running Cloud Run image is the CD-built one (Artifact Registry, not gcr.io). If it isn't, **stop** — deleting the gcr.io image will break production.
+
 ```bash
 PROJECT_ID=your-gcp-project-id
+REGION=europe-west1
 
-# Confirm the running image is now the CD-built one
-gcloud run services describe pb-hubspot-sync --region=europe-west1 \
-  --format='value(spec.template.spec.containers[0].image)'
-# Expect: europe-west1-docker.pkg.dev/PROJECT_ID/cloud-run-source-deploy/pb-hubspot-sync/pb-hubspot-sync:<sha>
-
-# Then delete every gcr.io tag/digest of the old image
-for digest in $(gcloud container images list-tags gcr.io/$PROJECT_ID/pb-hubspot-sync \
-  --format='get(digest)'); do
-  gcloud container images delete "gcr.io/$PROJECT_ID/pb-hubspot-sync@$digest" \
-    --force-delete-tags --quiet
-done
+gcloud run services describe pb-hubspot-sync --region="$REGION" --format='value(spec.template.spec.containers[0].image)'
 ```
 
-Storage cost on unreferenced images is ~$0.026/GB/month — pennies — so cleanup is hygiene rather than savings.
+Expected: `europe-west1-docker.pkg.dev/PROJECT_ID/cloud-run-source-deploy/pb-hubspot-sync/pb-hubspot-sync:<sha>`.
+
+Then delete every gcr.io digest. Multi-arch images store a parent index that references per-arch child manifests, so a single pass can fail with `manifest has referenced parents` — the loop runs up to four passes so the parent gets deleted first and the children become leaf-deletable on the next pass. The `while IFS= read -r` form is zsh-safe (zsh does not word-split unquoted vars on whitespace).
+
+```bash
+PROJECT_ID=your-gcp-project-id
+REPO="gcr.io/$PROJECT_ID/pb-hubspot-sync"
+
+for pass in 1 2 3 4; do
+  count=0
+  while IFS= read -r d; do
+    [ -z "$d" ] && continue
+    gcloud container images delete "$REPO@$d" --force-delete-tags --quiet || true
+    count=$((count + 1))
+  done < <(gcloud container images list-tags "$REPO" --format='get(digest)')
+  [ $count -eq 0 ] && break
+done
+
+gcloud container images list-tags "$REPO"
+```
+
+The final `list-tags` should print only the header row. Storage cost on unreferenced images is ~$0.026/GB/month — pennies — so cleanup is hygiene rather than savings.
+
+> **Pasting into zsh**: if you keep the inline `#` comments in any snippet, run `setopt interactivecomments` first — zsh treats `#` as literal in interactive mode by default.

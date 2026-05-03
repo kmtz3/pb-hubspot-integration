@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
-import { X, Plus, CheckCircle } from 'lucide-react';
+import { X, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useConfig, useSaveConfig, useHSProperties, useFilterPreview } from '../../../hooks/api';
 import { OPERATORS_BY_TYPE, OPERATOR_LABELS } from '../../../constants/operators';
 import type { HubSpotFilter } from '../../../../types/hubspot';
@@ -19,7 +19,7 @@ export default function FilterAccounts() {
   const saveConfig = useSaveConfig();
   const preview = useFilterPreview();
 
-  const { control, register, watch, handleSubmit, reset } = useForm<FilterFormValues>({
+  const { control, register, watch, handleSubmit, reset, setValue } = useForm<FilterFormValues>({
     defaultValues: {
       enabled: false,
       filters: [],
@@ -114,6 +114,15 @@ export default function FilterAccounts() {
         </label>
       </div>
 
+      {currentFilters.length > 0 && !enabled && (
+        <div style={{ marginBottom: 16 }}>
+          <InlineAlert variant="warning">
+            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1, marginRight: 4 }} />
+            Filters saved but not active — toggle on to apply, or clear all conditions to sync everything.
+          </InlineAlert>
+        </div>
+      )}
+
       {/* Conditions card */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 20, marginBottom: 16 }}>
         <div style={{ fontWeight: 600, marginBottom: 14 }}>Conditions</div>
@@ -181,7 +190,10 @@ export default function FilterAccounts() {
         {fields.length < MAX_FILTERS && (
           <button
             type="button"
-            onClick={() => append({ propertyName: '', operator: 'EQ', value: '' })}
+            onClick={() => {
+              if (fields.length === 0) setValue('enabled', true, { shouldDirty: true });
+              append({ propertyName: '', operator: 'EQ', value: '' });
+            }}
             style={{ border: '1px dashed var(--border)', borderRadius: 6, padding: '6px 12px', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
             <Plus size={14} /> Add condition
           </button>

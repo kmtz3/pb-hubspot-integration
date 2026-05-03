@@ -131,7 +131,8 @@ let memHistorySeq = 0;
 
 if (!USE_MEMSTORE) {
   if (!getApps().length) {
-    initializeApp({ projectId: process.env.FIRESTORE_PROJECT_ID ?? 'demo-local' });
+    const projectId = process.env.GCP_PROJECT_ID || process.env.FIRESTORE_PROJECT_ID || 'demo-local';
+    initializeApp({ projectId });
   }
 }
 

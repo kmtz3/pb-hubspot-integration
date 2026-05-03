@@ -83,12 +83,9 @@ resource "google_project_iam_member" "firestore_user" {
 #   gcloud secrets versions add <name> --data-file=-
 #
 # Application-level tokens (HubSpot, Productboard) are NOT pre-created here —
-# the Connect-tab UI calls writeSecret() at runtime to create
-# `hubspot-token` / `productboard-token` and add new versions on each save.
-# That dynamic flow needs secretmanager.secrets.create + versions.add at the
-# project level on the runtime SA, granted out-of-band (e.g. via
-# roles/secretmanager.secretCreator). The project-level secretAccessor binding
-# below covers reads for both static and dynamically-created secrets.
+# the Connect-tab UI calls writeSecret() at runtime. This dynamic flow requires
+# roles/secretmanager.admin so the app can create and manage its own token
+# resources without manual Terraform intervention for every secret.
 
 resource "google_secret_manager_secret" "session_secret" {
   secret_id = "SESSION_SECRET"
@@ -117,12 +114,12 @@ resource "google_secret_manager_secret" "google_client_secret" {
   depends_on = [google_project_service.secretmanager]
 }
 
-# Project-level read access — covers the static secrets above plus the
+# Project-level admin access — covers the static secrets above plus the
 # Connect-tab tokens (hubspot-token, productboard-token) that Terraform
-# does not declare, and any future runtime-created secret.
-resource "google_project_iam_member" "secret_accessor" {
+# does not declare. Required for the app to create/update tokens at runtime.
+resource "google_project_iam_member" "secret_admin" {
   project = var.project_id
-  role    = "roles/secretmanager.secretAccessor"
+  role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${google_service_account.sync_sa.email}"
 }
 
@@ -152,7 +149,7 @@ resource "google_cloud_run_v2_service" "sync" {
       }
       env {
         name  = "APP_URL"
-        value = var.app_url
+        value = local.service_url
       }
       env {
         name  = "GOOGLE_ALLOWED_DOMAIN"
