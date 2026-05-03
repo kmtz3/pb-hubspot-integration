@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle, Unplug, RefreshCw } from 'lucide-react';
 import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnect, useTestConnection, useHealth } from '../../../hooks/api';
 import type { HubSpotScopeCheck } from '../../../hooks/api';
@@ -72,6 +72,7 @@ function ConnectionCard({
   color,
   logoSrc,
   scopes,
+  optionalScopes,
   setupGuideUrl,
   config,
   onConnect,
@@ -87,6 +88,7 @@ function ConnectionCard({
   color: string;
   logoSrc: string;
   scopes: string[];
+  optionalScopes?: { label: string; scopes: string[] }[];
   setupGuideUrl: string;
   config: HubSpotConfig | ProductboardConfig | undefined;
   onConnect: (token: string) => void;
@@ -190,6 +192,16 @@ function ConnectionCard({
             <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--muted-foreground)' }}>
               {scopes.map(s => <li key={s}><code>{s}</code></li>)}
             </ul>
+            {optionalScopes?.map(group => (
+              <div key={group.label} style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 4 }}>
+                  {group.label} <span style={{ opacity: 0.7 }}>(optional)</span>:
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--muted-foreground)' }}>
+                  {group.scopes.map(s => <li key={s}><code>{s}</code></li>)}
+                </ul>
+              </div>
+            ))}
           </div>
           <input
             type="password"
@@ -284,6 +296,7 @@ export default function Connect() {
           color="#ff7a59"
           logoSrc="/logos/hubspot-icon.svg"
           scopes={['crm.objects.companies.read', 'crm.schemas.companies.read', 'crm.objects.owners.read']}
+          optionalScopes={[{ label: 'For Deals sync', scopes: ['crm.objects.deals.read', 'crm.schemas.deals.read'] }]}
           setupGuideUrl="https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys"
           config={data?.hubspot}
           onConnect={token => connectHS.mutate(token)}
