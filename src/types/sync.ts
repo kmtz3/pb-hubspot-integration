@@ -195,6 +195,7 @@ export interface ScopeCheck {
   granted: boolean;
   required: boolean;
   description: string;
+  group?: 'companies' | 'deals';
   error?: string;
 }
 

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AppConfig, SyncRun, HubSpotConfig, ProductboardConfig } from '../../types/sync';
-import type { HubSpotProperty, HubSpotFilter } from '../../types/hubspot';
+import type { HubSpotPipeline, HubSpotProperty, HubSpotFilter } from '../../types/hubspot';
 import type { PBField } from '../../types/productboard';
 
 export interface HubSpotScopeCheck {
@@ -8,6 +8,7 @@ export interface HubSpotScopeCheck {
   granted: boolean;
   required: boolean;
   description: string;
+  group?: 'companies' | 'deals';
   error?: string;
 }
 
@@ -136,6 +137,20 @@ export const useHSProperties = () =>
   useQuery({
     queryKey: ['hs-properties'],
     queryFn: () => apiFetch<HubSpotProperty[]>('/api/hubspot/properties'),
+    staleTime: 60 * 60 * 1000,
+  });
+
+export const useHSDealProperties = () =>
+  useQuery({
+    queryKey: ['hs-deal-properties'],
+    queryFn: () => apiFetch<HubSpotProperty[]>('/api/hubspot/properties?objectType=deals'),
+    staleTime: 60 * 60 * 1000,
+  });
+
+export const useDealPipelines = () =>
+  useQuery({
+    queryKey: ['hs-deal-pipelines'],
+    queryFn: () => apiFetch<HubSpotPipeline[]>('/api/hubspot/pipelines'),
     staleTime: 60 * 60 * 1000,
   });
 

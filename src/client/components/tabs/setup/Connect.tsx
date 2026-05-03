@@ -4,6 +4,68 @@ import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnec
 import type { HubSpotScopeCheck } from '../../../hooks/api';
 import type { HubSpotConfig, ProductboardConfig } from '../../../../types/sync';
 
+// D26: render two scope sections so a companies-only customer whose token
+// lacks deals scopes doesn't see what looks like a broken integration. The
+// deals section uses muted styling and an "(optional)" label.
+function renderScopeChecks(scopeChecks: HubSpotScopeCheck[]) {
+  const companiesScopes = scopeChecks.filter(s => !s.group || s.group === 'companies');
+  const dealsScopes = scopeChecks.filter(s => s.group === 'deals');
+  const missingRequired = companiesScopes.filter(s => !s.granted && s.required);
+  const allRequiredGranted = missingRequired.length === 0;
+
+  return (
+    <div style={{ marginTop: 4, fontSize: 12 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4, color: allRequiredGranted ? '#16a34a' : '#b45309' }}>
+        Required for Companies
+        {allRequiredGranted ? ' ✓' : ` – ${missingRequired.length} scope${missingRequired.length === 1 ? '' : 's'} missing`}
+      </div>
+      <ul style={{ margin: '0 0 10px', paddingLeft: 16, listStyle: 'none' }}>
+        {companiesScopes.map(s => (
+          <li key={s.scope} style={{ marginBottom: 2 }}>
+            <span style={{ color: s.granted ? '#16a34a' : 'var(--destructive)' }}>
+              {s.granted ? '✓' : '✗'}
+            </span>{' '}
+            <code style={{ fontSize: 11 }}>{s.scope}</code>
+            <span style={{ color: 'var(--muted-foreground)' }}>
+              {' – '}{s.description}
+            </span>
+            {!s.granted && s.error && (
+              <div style={{ marginLeft: 14, color: 'var(--muted-foreground)', fontSize: 11 }}>
+                {s.error}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {dealsScopes.length > 0 && (
+        <>
+          <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--muted-foreground)' }}>
+            Required for Deals <span style={{ fontWeight: 400 }}>(optional)</span>
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'none' }}>
+            {dealsScopes.map(s => (
+              <li key={s.scope} style={{ marginBottom: 2 }}>
+                <span style={{ color: s.granted ? '#16a34a' : 'var(--muted-foreground)' }}>
+                  {s.granted ? '✓' : '✗'}
+                </span>{' '}
+                <code style={{ fontSize: 11 }}>{s.scope}</code>
+                <span style={{ color: 'var(--muted-foreground)' }}>
+                  {' – '}{s.description}
+                </span>
+                {!s.granted && s.error && (
+                  <div style={{ marginLeft: 14, color: 'var(--muted-foreground)', fontSize: 11 }}>
+                    {s.error}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ConnectionCard({
   system,
   title,
@@ -118,35 +180,7 @@ function ConnectionCard({
             {testState === 'error' && (
               <div style={{ fontSize: 12, color: 'var(--destructive)' }}>✗ {testMessage}</div>
             )}
-            {scopeChecks && scopeChecks.length > 0 && (() => {
-              const missing = scopeChecks.filter(s => !s.granted);
-              const allGranted = missing.length === 0;
-              return (
-                <div style={{ marginTop: 4, fontSize: 12 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 4, color: allGranted ? '#16a34a' : '#b45309' }}>
-                    {allGranted ? '✓ All required scopes granted' : `⚠ ${missing.length} of ${scopeChecks.length} required scope${scopeChecks.length === 1 ? '' : 's'} missing`}
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'none' }}>
-                    {scopeChecks.map(s => (
-                      <li key={s.scope} style={{ marginBottom: 2 }}>
-                        <span style={{ color: s.granted ? '#16a34a' : 'var(--destructive)' }}>
-                          {s.granted ? '✓' : '✗'}
-                        </span>{' '}
-                        <code style={{ fontSize: 11 }}>{s.scope}</code>
-                        <span style={{ color: 'var(--muted-foreground)' }}>
-                          {' — '}{s.description}
-                        </span>
-                        {!s.granted && s.error && (
-                          <div style={{ marginLeft: 14, color: 'var(--muted-foreground)', fontSize: 11 }}>
-                            {s.error}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })()}
+            {scopeChecks && scopeChecks.length > 0 && renderScopeChecks(scopeChecks)}
           </div>
         </>
       ) : (

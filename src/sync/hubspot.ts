@@ -1,4 +1,4 @@
-import type { HubSpotCompany, HubSpotFilter, HubSpotFilterGroup, HubSpotProperty, HubSpotSearchPayload } from '../types/hubspot';
+import type { DealCompanyAssociations, HubSpotCompany, HubSpotDeal, HubSpotFilter, HubSpotFilterGroup, HubSpotPipeline, HubSpotProperty, HubSpotSearchPayload } from '../types/hubspot';
 import { getSecret } from '../lib/secrets';
 import { getHubSpotConfig } from '../lib/firestore';
 import { withRetry, type ApiResponse } from './rateLimit';
@@ -152,24 +152,53 @@ export async function getAccountInfo(token: string): Promise<{ portalId: string;
 // absent; other failure modes are reported with the status so the UI can
 // distinguish "missing scope" from "couldn't verify". Probes use limit=1
 // where supported to keep the check cheap.
-const SCOPE_PROBES: Array<{ scope: string; probe: string; required: boolean; description: string }> = [
+//
+// D26: probes carry a `group` so the Connect tab can render two sections —
+// "Required for Companies" (required=true, group='companies') and
+// "Required for Deals (optional)" (required=false, group='deals'). A failed
+// deals-group probe is displayed with muted styling so companies-only
+// customers don't perceive the integration as broken.
+const SCOPE_PROBES: Array<{
+  scope: string;
+  probe: string;
+  required: boolean;
+  description: string;
+  group: 'companies' | 'deals';
+}> = [
   {
     scope: 'crm.objects.companies.read',
     probe: '/crm/v3/objects/companies?limit=1',
     required: true,
+    group: 'companies',
     description: 'Read HubSpot company records (core sync source)',
   },
   {
     scope: 'crm.schemas.companies.read',
     probe: '/crm/v3/properties/company',
     required: true,
+    group: 'companies',
     description: 'Read company property metadata for field mapping',
   },
   {
     scope: 'crm.objects.owners.read',
     probe: '/crm/v3/owners?limit=1',
     required: true,
+    group: 'companies',
     description: 'Resolve owner IDs to emails for PB member field mappings',
+  },
+  {
+    scope: 'crm.objects.deals.read',
+    probe: '/crm/v3/objects/deals?limit=1',
+    required: false,
+    group: 'deals',
+    description: 'Read HubSpot deal records (required for Deals sync)',
+  },
+  {
+    scope: 'crm.schemas.deals.read',
+    probe: '/crm/v3/properties/deals?limit=1',
+    required: false,
+    group: 'deals',
+    description: 'Read deal property metadata for field mapping',
   },
 ];
 
@@ -180,7 +209,7 @@ export async function checkScopes(token: string): Promise<ScopeCheck[]> {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.ok) {
-        return { scope: s.scope, granted: true, required: s.required, description: s.description };
+        return { scope: s.scope, granted: true, required: s.required, group: s.group, description: s.description };
       }
       const body = await res.json().catch(() => null) as { category?: string; message?: string } | null;
       const isMissingScope = res.status === 403 || body?.category === 'MISSING_SCOPES';
@@ -188,6 +217,7 @@ export async function checkScopes(token: string): Promise<ScopeCheck[]> {
         scope: s.scope,
         granted: false,
         required: s.required,
+        group: s.group,
         description: s.description,
         error: isMissingScope ? 'Scope not granted' : `${res.status} ${body?.message ?? ''}`.trim(),
       };
@@ -196,10 +226,156 @@ export async function checkScopes(token: string): Promise<ScopeCheck[]> {
         scope: s.scope,
         granted: false,
         required: s.required,
+        group: s.group,
         description: s.description,
         error: e instanceof Error ? e.message : String(e),
       };
     }
   };
   return Promise.all(SCOPE_PROBES.map(probe));
+}
+
+// ── Deals ────────────────────────────────────────────────────────────────────
+
+export async function fetchDealProperties(): Promise<HubSpotProperty[]> {
+  const data = await withRetry(() =>
+    hsRequest<{ results: HubSpotProperty[] }>('/crm/v3/properties/deals')
+  );
+  return data.results;
+}
+
+export async function fetchDealPipelines(): Promise<HubSpotPipeline[]> {
+  const data = await withRetry(() =>
+    hsRequest<{ results: HubSpotPipeline[] }>('/crm/v3/pipelines/deals')
+  );
+  return data.results;
+}
+
+// Fetches deals matching the given filter groups, pipeline, and optional
+// stage constraints. Mirrors the incremental/backfill semantics of
+// fetchCompanies — mandatory filters (pipeline, stage) are ANDed into every
+// user group; the window filter is appended the same way.
+export async function fetchDeals(opts: {
+  filterGroups?: HubSpotFilterGroup[];
+  pipelineId: string;
+  stageIds?: string[];
+  properties?: string[];
+  lastSyncAt?: number | null;
+  windowFrom?: number | null;
+  windowTo?: number | null;
+  windowField?: 'hs_lastmodifieddate' | 'createdate';
+}): Promise<HubSpotDeal[]> {
+  const {
+    filterGroups = [],
+    pipelineId,
+    stageIds,
+    properties = ['dealname', 'dealstage', 'pipeline', 'amount', 'closedate', 'hubspot_owner_id', 'hs_lastmodifieddate', 'createdate', 'description'],
+    lastSyncAt,
+    windowFrom,
+    windowTo,
+    windowField = 'hs_lastmodifieddate',
+  } = opts;
+
+  const mandatoryFilters: HubSpotFilter[] = [
+    { propertyName: 'pipeline', operator: 'EQ', value: pipelineId },
+    ...(stageIds && stageIds.length > 0
+      ? [{ propertyName: 'dealstage', operator: 'IN' as const, values: stageIds }]
+      : []),
+  ];
+
+  // Backfill window (D21) takes priority; fall back to incremental lastSyncAt.
+  const windowFilter: HubSpotFilter | null = (() => {
+    if (windowFrom != null && windowTo != null) {
+      return { propertyName: windowField, operator: 'BETWEEN', value: String(windowFrom), highValue: String(windowTo) };
+    }
+    if (lastSyncAt != null) {
+      return { propertyName: 'hs_lastmodifieddate', operator: 'GT', value: String(lastSyncAt) };
+    }
+    return null;
+  })();
+
+  // AND-compose mandatory + window filters into each user group. Same pattern
+  // as fetchCompanies so OR semantics between groups are preserved.
+  const baseGroups = filterGroups.length > 0 ? filterGroups : [{ filters: [] }];
+  const effectiveFilterGroups: HubSpotFilterGroup[] = baseGroups.map(g => ({
+    filters: [
+      ...mandatoryFilters,
+      ...g.filters,
+      ...(windowFilter ? [windowFilter] : []),
+    ],
+  }));
+
+  const deals: HubSpotDeal[] = [];
+  let cursor: number | undefined;
+
+  do {
+    const payload = {
+      filterGroups: effectiveFilterGroups,
+      properties,
+      limit: 100,
+      ...(cursor !== undefined ? { after: cursor } : {}),
+    };
+
+    const pageData = await withRetry(() =>
+      hsRequest<{ results: HubSpotDeal[]; paging?: { next?: { after: number } } }>(
+        '/crm/v3/objects/deals/search',
+        { method: 'POST', body: JSON.stringify(payload) }
+      )
+    );
+
+    deals.push(...pageData.results);
+    cursor = pageData.paging?.next?.after;
+  } while (cursor !== undefined);
+
+  return deals;
+}
+
+// Fetches company associations for a list of deal IDs using the HubSpot
+// associations v4 batch endpoint. Chunks to 1000 IDs per request (HS limit).
+// A deal is marked "primary" when one of its association types carries the
+// label 'deal_to_company_primary'.
+export async function fetchDealAssociations(
+  dealIds: string[]
+): Promise<Map<string, DealCompanyAssociations>> {
+  type AssocType = { category: string; typeId: number; label?: string };
+  type ToItem = { toObjectId: string; associationTypes: AssocType[] };
+  type ResultItem = { from: { id: string }; to: ToItem[] };
+  type BatchResponse = { results: ResultItem[] };
+
+  const result = new Map<string, DealCompanyAssociations>();
+
+  // Chunk at 1000 per HS batch limit
+  for (let i = 0; i < dealIds.length; i += 1000) {
+    const chunk = dealIds.slice(i, i + 1000);
+    const response = await withRetry(() =>
+      hsRequest<BatchResponse>(
+        '/crm/associations/2026-03/deal/company/batch/read',
+        {
+          method: 'POST',
+          body: JSON.stringify({ inputs: chunk.map(id => ({ id })) }),
+        }
+      )
+    );
+
+    for (const item of response.results ?? []) {
+      const all: string[] = [];
+      let primary: string | undefined;
+      for (const to of item.to ?? []) {
+        const companyId = String(to.toObjectId);
+        all.push(companyId);
+        if (to.associationTypes.some(t => t.label === 'deal_to_company_primary')) {
+          primary = companyId;
+        }
+      }
+      result.set(item.from.id, { primary, all });
+    }
+  }
+
+  // Deals with no associations are omitted from the batch response; seed them
+  // with an empty record so callers always find an entry.
+  for (const id of dealIds) {
+    if (!result.has(id)) result.set(id, { all: [] });
+  }
+
+  return result;
 }

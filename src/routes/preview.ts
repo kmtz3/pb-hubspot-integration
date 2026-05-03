@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { getCachedData, setCachedData } from '../lib/firestore';
-import { fetchProperties, getHubSpotToken } from '../sync/hubspot';
+import { fetchDealPipelines, fetchDealProperties, fetchProperties, getHubSpotToken } from '../sync/hubspot';
 import { fetchEntityConfigurations } from '../sync/productboard';
-import type { HubSpotProperty } from '../types/hubspot';
+import type { HubSpotPipeline, HubSpotProperty } from '../types/hubspot';
 import type { PBField } from '../types/productboard';
 import type { HubSpotFilter } from '../types/hubspot';
 import type { ObjectType } from '../types/sync';
@@ -14,8 +14,7 @@ export const hsPropertiesRouter = Router();
 export const pbFieldsRouter = Router();
 
 // D24: `?objectType=` is optional and defaults to `companies` so existing
-// clients that don't yet pass it keep working without change. Phase 2 wires
-// the deals branch in `properties` and `preview`.
+// clients that don't yet pass it keep working without change.
 function readObjectType(raw: unknown): ObjectType {
   if (raw === 'deals' || raw === 'companies') return raw;
   return 'companies';
@@ -25,7 +24,28 @@ function readObjectType(raw: unknown): ObjectType {
 router.post('/preview', async (req, res) => {
   const objectType = readObjectType(req.query.objectType);
   if (objectType === 'deals') {
-    return res.status(501).json({ error: 'deals filter preview lands in Phase 2' });
+    // Deals filter preview is a count-only probe against the deals search
+    // endpoint, identical in shape to the companies preview. Pipeline/stage
+    // pre-filters are not applied here — this endpoint is used by the Filter
+    // tab's "Preview" button which already scopes to the user's filter groups.
+    const { filters } = req.body as { filters?: HubSpotFilter[] };
+    if (!Array.isArray(filters)) return res.status(400).json({ error: 'filters array required' });
+    try {
+      const token = await getHubSpotToken();
+      const resp = await fetch('https://api.hubapi.com/crm/v3/objects/deals/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filterGroups: [{ filters }], properties: ['dealname'], limit: 1 }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({})) as { message?: string };
+        return res.status(resp.status).json({ error: err.message ?? 'HubSpot search failed' });
+      }
+      const data = await resp.json() as { total: number };
+      return res.json({ count: data.total, total: data.total });
+    } catch {
+      return res.status(500).json({ error: 'Filter preview failed' });
+    }
   }
 
   const { filters } = req.body as { filters?: HubSpotFilter[] };
@@ -60,8 +80,26 @@ router.post('/preview', async (req, res) => {
 // GET /api/hubspot/properties[?refresh=true&objectType=companies|deals]
 hsPropertiesRouter.get('/properties', async (req, res) => {
   const objectType = readObjectType(req.query.objectType);
+
   if (objectType === 'deals') {
-    return res.status(501).json({ error: 'deals properties endpoint lands in Phase 2' });
+    try {
+      const bypassCache = req.query.refresh === 'true';
+      if (!bypassCache) {
+        const cached = await getCachedData<HubSpotProperty[]>('hs_deal_properties');
+        if (cached && Date.now() - new Date(cached.cachedAt).getTime() < CACHE_TTL_MS) {
+          return res.json(cached.data);
+        }
+      }
+      const properties = await fetchDealProperties();
+      res.json(properties);
+      setCachedData('hs_deal_properties', properties).catch(err =>
+        console.error('[hs-deal-properties] cache write failed (non-fatal):', err)
+      );
+    } catch (err) {
+      console.error('[hs-deal-properties] fetch failed:', err);
+      res.status(500).json({ error: 'Failed to fetch HubSpot deal properties' });
+    }
+    return;
   }
 
   try {
@@ -74,13 +112,36 @@ hsPropertiesRouter.get('/properties', async (req, res) => {
     }
     const properties = await fetchProperties();
     res.json(properties);
-    // See note on /fields — cache write must not fail a successful response.
+    // Cache write must not fail a successful response.
     setCachedData('hs_properties', properties).catch(err =>
       console.error('[hs-properties] cache write failed (non-fatal):', err)
     );
   } catch (err) {
     console.error('[hs-properties] fetch failed:', err);
     res.status(500).json({ error: 'Failed to fetch HubSpot properties' });
+  }
+});
+
+// GET /api/hubspot/pipelines[?refresh=true]
+// Returns the full pipeline + stage list for deals. Used by the Deals → Filter
+// tab to populate the pipeline single-select and stage multi-select.
+hsPropertiesRouter.get('/pipelines', async (req, res) => {
+  try {
+    const bypassCache = req.query.refresh === 'true';
+    if (!bypassCache) {
+      const cached = await getCachedData<HubSpotPipeline[]>('hs_deal_pipelines');
+      if (cached && Date.now() - new Date(cached.cachedAt).getTime() < CACHE_TTL_MS) {
+        return res.json(cached.data);
+      }
+    }
+    const pipelines = await fetchDealPipelines();
+    res.json(pipelines);
+    setCachedData('hs_deal_pipelines', pipelines).catch(err =>
+      console.error('[hs-deal-pipelines] cache write failed (non-fatal):', err)
+    );
+  } catch (err) {
+    console.error('[hs-deal-pipelines] fetch failed:', err);
+    res.status(500).json({ error: 'Failed to fetch HubSpot deal pipelines' });
   }
 });
 
