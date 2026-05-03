@@ -1,6 +1,7 @@
 import type { DealCompanyAssociations, HubSpotCompany, HubSpotDeal, HubSpotFilter, HubSpotFilterGroup, HubSpotPipeline, HubSpotProperty, HubSpotSearchPayload } from '../types/hubspot';
 import { getSecret } from '../lib/secrets';
 import { getHubSpotConfig } from '../lib/firestore';
+import { memoizeWithTtl } from '../lib/processCache';
 import { withRetry, type ApiResponse } from './rateLimit';
 import type { ScopeCheck } from '../types/sync';
 
@@ -134,6 +135,15 @@ export async function fetchOwnerEmailMaps(): Promise<{
 
   return { ownerIdToEmail, userIdToEmail };
 }
+
+// Process-level memoized variant (D27). Companies + deals scheduler jobs that
+// fire seconds apart on the same warm Cloud Run instance share one fetch per
+// 60s window, eliminating duplicate /crm/v3/owners walks during overlap. Cold
+// start always fetches; warm hits within the TTL reuse. Engine paths should
+// prefer this; the unmemoized version stays exported for tests and one-off
+// admin tools that want a fresh read.
+const HS_OWNER_TTL_MS = 60_000;
+export const fetchOwnerEmailMapsCached = memoizeWithTtl(fetchOwnerEmailMaps, HS_OWNER_TTL_MS);
 
 export async function getAccountInfo(token: string): Promise<{ portalId: string; hubName: string | null }> {
   const res = await fetch(`${BASE}/account-info/v3/details`, {

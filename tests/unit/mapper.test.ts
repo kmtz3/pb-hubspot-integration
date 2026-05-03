@@ -248,6 +248,57 @@ describe('buildCompanyFieldsPayload', () => {
     });
     expect(result['pb_industry']).toEqual({ name: 'Software' });
   });
+
+  // ── D20 owner-gating regression coverage ───────────────────────────────────
+  // Phase 3 unifies the PB members map across companies + deals. These tests
+  // pin the existing companies behavior so the next refactor can't silently
+  // re-introduce a bug. The case-mix test in particular guards against the
+  // common bug where one side lowercases and the other doesn't.
+
+  it('drops the owner field and fires onMemberSkipped when the resolved email is not in pbMemberEmails', () => {
+    const company = makeHubSpotCompany({
+      properties: { name: 'Acme Corp', domain: 'acme.com', hubspot_owner_id: '101' } as Record<string, string>,
+    });
+    const mappings = [
+      makeFieldMapping({ hubspotProperty: 'hubspot_owner_id', pbFieldId: 'pb_owner', pbFieldType: 'member', enabled: true, locked: false }),
+    ];
+    const onMemberSkipped = jest.fn();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = buildCompanyFieldsPayload(company, mappings, {
+      memberEmails: new Set(['someone-else@productboard.com']),
+      ownerIdToEmail: new Map([['101', 'orphan@example.com']]),
+      onMemberSkipped,
+    });
+
+    // Owner field dropped (mapper coerces to null when the email isn't a workspace member,
+    // and the field isn't on the non-clearable list, so it lands as a clear-op candidate).
+    expect(result['pb_owner']).toBeNull();
+    expect(onMemberSkipped).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('keeps the owner when the HS-owner email and PB-member email differ only in case', () => {
+    // Critical regression: HS exposes owners with the original casing, PB members are stored
+    // lowercased. If either side stops lowercasing before comparison, every owner in a
+    // mixed-case workspace would silently disappear from PB. Guard verbatim per the plan.
+    const company = makeHubSpotCompany({
+      properties: { name: 'Acme Corp', domain: 'acme.com', hubspot_owner_id: '202' } as Record<string, string>,
+    });
+    const mappings = [
+      makeFieldMapping({ hubspotProperty: 'hubspot_owner_id', pbFieldId: 'pb_owner', pbFieldType: 'member', enabled: true, locked: false }),
+    ];
+    const onMemberSkipped = jest.fn();
+
+    const result = buildCompanyFieldsPayload(company, mappings, {
+      memberEmails: new Set(['klara@productboard.com']),                    // PB side: lowercase
+      ownerIdToEmail: new Map([['202', 'Klara@Productboard.com']]),         // HS side: mixed case
+      onMemberSkipped,
+    });
+
+    expect(result['pb_owner']).toEqual({ email: 'klara@productboard.com' });
+    expect(onMemberSkipped).not.toHaveBeenCalled();
+  });
 });
 
 describe('stripNullFieldValues', () => {

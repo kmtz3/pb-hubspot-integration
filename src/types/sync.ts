@@ -141,6 +141,10 @@ export interface SyncStats {
   archived?: number;
   contentSkipped?: number;
   snippetsStripped?: number;
+  // Phase 3 (D20): incremented every time a `member`/`multimember` mapping
+  // resolves an HS email that is NOT in the PB workspace member set, so the
+  // owner field gets dropped pre-flight. Used by both companies and deals.
+  ownerSkipped?: number;
 }
 
 export interface SyncRunError {

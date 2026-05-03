@@ -182,3 +182,61 @@ export interface ProductboardTagRef {
   id?: string;
   name: string;
 }
+
+// PB workspace member shape returned by GET /v2/members. Kept narrow — only
+// the fields the sync flow actually reads (owner-skip detection in the deal
+// note builder, owner gating in the company mapper). Live-tested 2026-05-03
+// against `excellence-kmtz-1`.
+export interface PBMember {
+  id: string;
+  email: string;       // lowercased before being stored
+  name?: string;
+  role: string;
+  disabled: boolean;
+  invitationPending: boolean;
+}
+
+// POST /v2/notes body shape for textNote. Mirrors the existing
+// PBCreateEntityPayload pattern — wraps everything under `data`. Relationships
+// are optional and set atomically at create time (a customer link to the deal's
+// PB company; further `link`-type relationships are added via the dedicated
+// /relationships endpoint later if needed).
+export interface CreateNotePayload {
+  data: {
+    type: 'textNote';
+    fields: {
+      name: string;
+      content?: string;
+      tags?: ProductboardTagRef[];
+      owner?: { email: string };
+    };
+    metadata: {
+      source: {
+        system: string;
+        recordId: string;
+        url?: string;
+      };
+    };
+    relationships?: Array<{
+      type: 'customer' | 'link';
+      target: { id: string; type: 'user' | 'company' | 'link' };
+    }>;
+  };
+}
+
+// PATCH /v2/notes/{id} body shape. PB accepts either a `fields` replace or a
+// granular `patch` array (set / clear / addItems / removeItems). The note
+// PATCH endpoint does NOT accept `relationships` — those go through the
+// dedicated /relationships routes (live-tested constraint).
+export type NotePatchOp =
+  | { op: 'set'; path: string; value: unknown }
+  | { op: 'clear'; path: string }
+  | { op: 'addItems'; path: string; value: unknown[] }
+  | { op: 'removeItems'; path: string; value: unknown[] };
+
+export interface NotePatch {
+  data: {
+    fields?: Partial<CreateNotePayload['data']['fields']> & { archived?: boolean };
+    patch?: NotePatchOp[];
+  };
+}

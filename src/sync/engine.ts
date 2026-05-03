@@ -9,13 +9,27 @@ import {
   updateSyncConfig,
   writeSyncHistory,
 } from '../lib/firestore';
-import { fetchCompanies, fetchOwnerEmailMaps, fetchProperties } from './hubspot';
+import { fetchCompanies, fetchOwnerEmailMapsCached, fetchProperties } from './hubspot';
 import * as pbClient from './productboard';
 import { buildCompanyMaps, findExistingCompany } from './dedup';
 import { buildCompanyFieldsPayload, buildPatchOperations, detectOwnerIdField, stripNullFieldValues } from './mapper';
 import type { FieldMapping } from '../types/sync';
 import type { PBField, PBFieldValue } from '../types/productboard';
 import { ApiError } from './rateLimit';
+
+// Shared per-run context passed through the inner pipeline (D20). The shape
+// is deliberately narrow — the directories (`pbMemberEmails`, `ownerIdToEmail`,
+// `userIdToEmail`) are populated once at run start and read O(1) per record.
+// Phase 4 extends this with deal-specific maps (deal note index, company
+// dedup index, association map, unassigned placeholder uuid). For Phase 3
+// it just formalizes what runCompaniesSync already passes around as locals,
+// so both flows have a single interface for "is this email a PB member" /
+// "is this HS id resolvable to an email".
+export interface SyncContext {
+  pbMemberEmails: Set<string>;
+  ownerIdToEmail: Map<string, string>;
+  userIdToEmail: Map<string, string>;
+}
 
 // Returns a human-readable skipReason if either connection is missing, or
 // null if both sides are configured. Token presence is detected via either
@@ -277,15 +291,18 @@ export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncSta
       }
     }
 
-    // Pre-fetch the workspace member directory once when any active mapping
-    // targets a PB member field, so per-row email validation is O(1).
+    // Pre-fetch the PB workspace member directory once when any active
+    // mapping targets a PB member field (D20). Single source of truth for
+    // owner gating across companies AND deals — both runs read through
+    // `buildPbMemberEmailSetCached` (60s TTL, D27) so two scheduler jobs
+    // firing seconds apart on the same warm instance share one round-trip.
     let memberEmails: Set<string> | undefined;
     const needsMembers = mappings.some(m =>
       (m.enabled || m.locked) && (m.pbFieldType === 'member' || m.pbFieldType === 'multimember')
     );
     if (needsMembers && !DRY_RUN()) {
       try {
-        memberEmails = await pbClient.listMemberEmails();
+        memberEmails = await pbClient.buildPbMemberEmailSetCached();
       } catch (e) {
         console.warn('Could not pre-load PB members for owner validation:', e);
         memberEmails = new Set();
@@ -298,7 +315,8 @@ export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncSta
     // owner.userId → email — so the mapper's resolveOwnerIdsToEmails is O(1)
     // per row. Requires `crm.objects.owners.read` scope on the HS token; on
     // auth/network failure we proceed with empty maps so resolution skips
-    // cleanly rather than failing the run.
+    // cleanly rather than failing the run. Memoized variant (60s TTL, D27)
+    // is shared with runDealsSync so overlapping schedulers don't duplicate.
     let ownerIdToEmail: Map<string, string> | undefined;
     let userIdToEmail: Map<string, string> | undefined;
     const needsOwnerLookup = mappings.some(m =>
@@ -306,7 +324,7 @@ export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncSta
     );
     if (needsOwnerLookup && !DRY_RUN()) {
       try {
-        const maps = await fetchOwnerEmailMaps();
+        const maps = await fetchOwnerEmailMapsCached();
         ownerIdToEmail = maps.ownerIdToEmail;
         userIdToEmail = maps.userIdToEmail;
       } catch (e) {
@@ -373,6 +391,7 @@ export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncSta
             nonClearableFieldIds: requiredPBFieldIds,
             fieldConstraintsById: pbFieldConstraintsById,
             hsPropertyOptions,
+            onMemberSkipped: () => { stats.ownerSkipped = (stats.ownerSkipped ?? 0) + 1; },
           });
 
           if (DRY_RUN()) {

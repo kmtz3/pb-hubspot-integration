@@ -87,6 +87,11 @@ export interface CoerceContext {
    *  enumeration values (e.g. "academic_programs") to display labels ("Academic Programs")
    *  before writing to PB select / multiselect fields. */
   hsPropertyOptions?: Map<string, Map<string, string>>;
+  /** Invoked once per `member` / `multimember` value that gets dropped because
+   *  the resolved email isn't in `memberEmails`. The engine wires this to
+   *  `stats.ownerSkipped` so SyncRun reflects the truth instead of silently
+   *  losing owners (D20). Optional — call sites without stats can omit. */
+  onMemberSkipped?: () => void;
 }
 
 // HS property-name heuristic — distinguishes owner-id sources (`hubspot_owner_id`,
@@ -148,6 +153,7 @@ export function coerceFieldValue(
     if (!email) return null;
     if (ctx?.memberEmails && !ctx.memberEmails.has(email)) {
       console.warn(`coerceFieldValue: PB member "${email}" is not a workspace member; skipping`);
+      ctx.onMemberSkipped?.();
       return null;
     }
     return { email };
@@ -162,6 +168,7 @@ export function coerceFieldValue(
       if (!email) continue;
       if (ctx?.memberEmails && !ctx.memberEmails.has(email)) {
         console.warn(`coerceFieldValue: PB member "${email}" is not a workspace member; skipping`);
+        ctx.onMemberSkipped?.();
         continue;
       }
       out.push({ email });
