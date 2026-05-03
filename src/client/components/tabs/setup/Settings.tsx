@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { useConfig, useSaveConfig, useResetConfig, useDisconnect } from '../../../hooks/api';
+import { useConfig, useSaveConfig, useResetConfig, useDisconnect, useClearHistory } from '../../../hooks/api';
 import InlineAlert from '../../ui/InlineAlert';
 import Code from '../../ui/Code';
 import type { SyncConfig } from '../../../../types/sync';
@@ -118,12 +118,18 @@ export default function Settings() {
   const { data: config, isLoading } = useConfig();
   const saveMutation = useSaveConfig();
   const resetConfig = useResetConfig();
+  const clearHistory = useClearHistory();
   const disconnect = useDisconnect();
   const [showSaved, setShowSaved] = useState(false);
 
   async function handleResetConfig() {
     if (!window.confirm('Reset all configuration? This will clear mappings, filters, schedule, and sync history. Tokens are not affected.')) return;
     await resetConfig.mutateAsync();
+  }
+
+  async function handleClearHistory() {
+    if (!window.confirm('Delete all sync run history? Configuration and tokens are not affected.')) return;
+    await clearHistory.mutateAsync();
   }
 
   async function handleDisconnectBoth() {
@@ -315,6 +321,21 @@ export default function Settings() {
                   opacity: resetConfig.isPending ? 0.6 : 1,
                 }}>
                   {resetConfig.isPending ? 'Resetting…' : 'Reset config'}
+                </button>
+              }
+            />
+            <SettingRow
+              label="Clear history"
+              hint="Deletes all sync run records from Firestore. Configuration, mappings, and tokens are not affected."
+              ctrl={
+                <button type="button" onClick={handleClearHistory} disabled={clearHistory.isPending} style={{
+                  height: 28, padding: '0 12px', borderRadius: 4,
+                  border: '1px solid var(--destructive)', background: 'var(--background)',
+                  color: 'var(--destructive)', fontSize: 12, fontFamily: 'var(--font-sans)',
+                  fontWeight: 600, cursor: clearHistory.isPending ? 'not-allowed' : 'pointer',
+                  opacity: clearHistory.isPending ? 0.6 : 1,
+                }}>
+                  {clearHistory.isPending ? 'Clearing…' : 'Clear history'}
                 </button>
               }
             />

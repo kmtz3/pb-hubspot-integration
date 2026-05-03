@@ -122,6 +122,14 @@ export const useResetConfig = () => {
   });
 };
 
+export const useClearHistory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean }>('/api/config/history', { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sync-runs'] }),
+  });
+};
+
 // ── HubSpot / PB field discovery ─────────────────────────────────────────────
 
 export const useHSProperties = () =>

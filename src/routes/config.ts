@@ -11,6 +11,7 @@ import {
   saveAccountFilter,
   saveDealsFilter,
   clearAllConfig,
+  clearSyncHistory,
 } from '../lib/firestore';
 import type { AppConfig, SyncConfig } from '../types/sync';
 
@@ -122,6 +123,16 @@ router.patch('/', async (req, res) => {
 router.delete('/', async (_req, res) => {
   try {
     await clearAllConfig();
+    res.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+router.delete('/history', async (_req, res) => {
+  try {
+    await clearSyncHistory();
     res.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
