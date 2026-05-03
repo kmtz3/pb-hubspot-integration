@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { useConfig, useSaveConfig } from '../../../hooks/api';
+import { useConfig, useSaveConfig, useDisconnect } from '../../../hooks/api';
 import InlineAlert from '../../ui/InlineAlert';
 import Code from '../../ui/Code';
 import type { SyncConfig } from '../../../../types/sync';
@@ -117,7 +117,16 @@ function StyledSelect({ value, onChange, options }: {
 export default function Settings() {
   const { data: config, isLoading } = useConfig();
   const saveMutation = useSaveConfig();
+  const disconnect = useDisconnect();
   const [showSaved, setShowSaved] = useState(false);
+
+  async function handleDisconnectBoth() {
+    if (!window.confirm('Remove saved tokens for both HubSpot and Productboard? This will disable all syncs.')) return;
+    await Promise.all([
+      disconnect.mutateAsync('hubspot'),
+      disconnect.mutateAsync('productboard'),
+    ]);
+  }
 
 
   const { control, handleSubmit, reset, watch } = useForm<SettingsForm>({
@@ -306,15 +315,15 @@ export default function Settings() {
               label="Disconnect both systems"
               hint="Removes saved tokens and disables all syncs. Existing Productboard records are not deleted."
               ctrl={
-                <a href="/auth/logout" style={{
-                  display: 'inline-flex', alignItems: 'center',
+                <button type="button" onClick={handleDisconnectBoth} disabled={disconnect.isPending} style={{
                   height: 28, padding: '0 12px', borderRadius: 4,
                   border: '1px solid var(--destructive)', background: 'var(--background)',
                   color: 'var(--destructive)', fontSize: 12, fontFamily: 'var(--font-sans)',
-                  fontWeight: 600, cursor: 'pointer', textDecoration: 'none',
+                  fontWeight: 600, cursor: disconnect.isPending ? 'not-allowed' : 'pointer',
+                  opacity: disconnect.isPending ? 0.6 : 1,
                 }}>
-                  Disconnect
-                </a>
+                  {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+                </button>
               }
             />
           </div>
