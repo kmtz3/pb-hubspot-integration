@@ -66,7 +66,9 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(authRouter);
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', (_req, res) =>
+  res.json({ ok: true, gcpProjectId: process.env.GCP_PROJECT_ID ?? null })
+);
 
 // Serve docs in both dev and prod with the version chip substituted at
 // startup. Registered BEFORE `express.static` below so the dynamic route

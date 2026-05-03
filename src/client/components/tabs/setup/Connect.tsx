@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle, Unplug, RefreshCw } from 'lucide-react';
-import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnect, useTestConnection } from '../../../hooks/api';
+import { useConnections, useConnectHubSpot, useConnectProductboard, useDisconnect, useTestConnection, useHealth } from '../../../hooks/api';
 import type { HubSpotScopeCheck } from '../../../hooks/api';
 import type { HubSpotConfig, ProductboardConfig } from '../../../../types/sync';
 
@@ -184,6 +184,7 @@ function ConnectionCard({
 
 export default function Connect() {
   const { data, isLoading } = useConnections();
+  const { data: healthData } = useHealth();
   const connectHS = useConnectHubSpot();
   const connectPB = useConnectProductboard();
   const disconnect = useDisconnect();
@@ -282,7 +283,7 @@ export default function Connect() {
         <div style={{ fontWeight: 600, marginBottom: 12 }}>Deployment</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {[
-            { label: 'GCP Project', value: import.meta.env.VITE_GCP_PROJECT_ID || '—' },
+            { label: 'GCP Project', value: healthData?.gcpProjectId ?? '—' },
             { label: 'Service', value: 'Cloud Run' },
             { label: 'Storage', value: 'Firestore' },
             { label: 'Access', value: 'Cloud Run IAM' },

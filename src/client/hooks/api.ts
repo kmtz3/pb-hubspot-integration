@@ -34,6 +34,15 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ── Health / deployment info ─────────────────────────────────────────────────
+
+export const useHealth = () =>
+  useQuery({
+    queryKey: ['health'],
+    queryFn: () => apiFetch<{ ok: boolean; gcpProjectId: string | null }>('/health'),
+    staleTime: Infinity,
+  });
+
 // ── Connections ──────────────────────────────────────────────────────────────
 
 export const useConnections = () =>
