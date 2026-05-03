@@ -114,6 +114,14 @@ export const useSaveConfig = () => {
   });
 };
 
+export const useResetConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean }>('/api/config', { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+  });
+};
+
 // ── HubSpot / PB field discovery ─────────────────────────────────────────────
 
 export const useHSProperties = () =>

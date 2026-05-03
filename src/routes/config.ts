@@ -10,6 +10,7 @@ import {
   getFiltersDoc,
   saveAccountFilter,
   saveDealsFilter,
+  clearAllConfig,
 } from '../lib/firestore';
 import type { AppConfig, SyncConfig } from '../types/sync';
 
@@ -113,6 +114,16 @@ router.patch('/', async (req, res) => {
       statusDetails: e.statusDetails,
       stack: e.stack,
     });
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+router.delete('/', async (_req, res) => {
+  try {
+    await clearAllConfig();
+    res.json({ ok: true });
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });
   }

@@ -522,6 +522,55 @@ function cloneFiltersDoc(d: FiltersDoc): FiltersDoc {
   };
 }
 
+// ── History-only clear ────────────────────────────────────────────────────────
+
+export async function clearSyncHistory(): Promise<void> {
+  if (USE_MEMSTORE) {
+    mem.syncHistory = new Map();
+    memHistorySeq = 0;
+    return;
+  }
+  let snap = await db().collection(HISTORY).limit(500).get();
+  while (!snap.empty) {
+    const batch = db().batch();
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    if (snap.docs.length < 500) break;
+    snap = await db().collection(HISTORY).limit(500).get();
+  }
+}
+
+// ── Full config reset ─────────────────────────────────────────────────────────
+
+export async function clearAllConfig(): Promise<void> {
+  const defaults = defaultDevStore();
+  if (USE_MEMSTORE) {
+    mem.sync = defaults.sync;
+    mem.fieldMappings = defaults.fieldMappings;
+    mem.filters = defaults.filters;
+    mem.syncHistory = new Map();
+    memHistorySeq = 0;
+    flushDevStore();
+    return;
+  }
+
+  const batch = db().batch();
+  batch.set(db().collection(CONFIG).doc('sync'), defaults.sync);
+  batch.set(db().collection(CONFIG).doc('fieldMappings'), defaults.fieldMappings);
+  batch.set(db().collection(CONFIG).doc('filters'), defaults.filters);
+  await batch.commit();
+
+  // Delete sync history in pages (Firestore batch limit: 500 ops).
+  let snap = await db().collection(HISTORY).limit(500).get();
+  while (!snap.empty) {
+    const deleteBatch = db().batch();
+    snap.docs.forEach(doc => deleteBatch.delete(doc.ref));
+    await deleteBatch.commit();
+    if (snap.docs.length < 500) break;
+    snap = await db().collection(HISTORY).limit(500).get();
+  }
+}
+
 // Re-export the legacy default-mappings helper name so any external scripts
 // importing it (planning-docs experiments, manual seeds) keep compiling.
 export { defaultCompanyMappings as defaultFieldMappings };

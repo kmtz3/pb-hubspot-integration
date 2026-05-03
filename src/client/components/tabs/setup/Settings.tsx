@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { useConfig, useSaveConfig, useDisconnect } from '../../../hooks/api';
+import { useConfig, useSaveConfig, useResetConfig, useDisconnect } from '../../../hooks/api';
 import InlineAlert from '../../ui/InlineAlert';
 import Code from '../../ui/Code';
 import type { SyncConfig } from '../../../../types/sync';
@@ -117,8 +117,14 @@ function StyledSelect({ value, onChange, options }: {
 export default function Settings() {
   const { data: config, isLoading } = useConfig();
   const saveMutation = useSaveConfig();
+  const resetConfig = useResetConfig();
   const disconnect = useDisconnect();
   const [showSaved, setShowSaved] = useState(false);
+
+  async function handleResetConfig() {
+    if (!window.confirm('Reset all configuration? This will clear mappings, filters, schedule, and sync history. Tokens are not affected.')) return;
+    await resetConfig.mutateAsync();
+  }
 
   async function handleDisconnectBoth() {
     if (!window.confirm('Remove saved tokens for both HubSpot and Productboard? This will disable all syncs.')) return;
@@ -301,13 +307,14 @@ export default function Settings() {
               label="Reset all configuration"
               hint="Clears mappings, filters, schedule, and history. Tokens in Secret Manager are not affected."
               ctrl={
-                <button type="button" style={{
+                <button type="button" onClick={handleResetConfig} disabled={resetConfig.isPending} style={{
                   height: 28, padding: '0 12px', borderRadius: 4,
                   border: '1px solid var(--destructive)', background: 'var(--background)',
                   color: 'var(--destructive)', fontSize: 12, fontFamily: 'var(--font-sans)',
-                  fontWeight: 600, cursor: 'pointer',
+                  fontWeight: 600, cursor: resetConfig.isPending ? 'not-allowed' : 'pointer',
+                  opacity: resetConfig.isPending ? 0.6 : 1,
                 }}>
-                  Reset config
+                  {resetConfig.isPending ? 'Resetting…' : 'Reset config'}
                 </button>
               }
             />
