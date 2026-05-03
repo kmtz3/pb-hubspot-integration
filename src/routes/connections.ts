@@ -7,11 +7,19 @@ import type { HubSpotConfig, ProductboardConfig } from '../types/sync';
 
 export const router = Router();
 
-// Strip the raw token from any config before sending it to the browser.
-// Replaces tokenSecretName with a short masked preview for UI display.
-function sanitize<T extends HubSpotConfig | ProductboardConfig>(config: T): Omit<T, 'tokenSecretName'> & { tokenMasked?: string } {
-  const { tokenSecretName, ...rest } = config;
-  const tokenMasked = tokenSecretName ? '••••••••' + tokenSecretName.slice(-4) : undefined;
+// Strip server-only token fields before sending the config to the browser.
+// Builds `tokenMasked` from `tokenLast4` (the last 4 chars of the raw token,
+// captured at save time) — never from `tokenSecretName`, whose tail is the
+// Secret Manager resource path (e.g. ".../versions/4") and tells the UI nothing
+// useful about the actual token. Configs saved before tokenLast4 was tracked
+// fall back to dots-only until the next reconnect.
+function sanitize<T extends HubSpotConfig | ProductboardConfig>(
+  config: T,
+): Omit<T, 'tokenSecretName' | 'tokenLast4'> & { tokenMasked?: string } {
+  const { tokenSecretName, tokenLast4, ...rest } = config;
+  const tokenMasked = tokenSecretName
+    ? '••••••••' + (tokenLast4 ?? '')
+    : undefined;
   return { ...rest, tokenMasked };
 }
 
@@ -46,6 +54,7 @@ router.post('/hubspot', async (req, res) => {
       hubName,
       connectedAt: new Date().toISOString(),
       tokenSecretName,
+      tokenLast4: token.slice(-4),
     };
     await saveHubSpotConfig(config);
     res.json({ ...sanitize(config), scopes });
@@ -68,6 +77,7 @@ router.post('/productboard', async (req, res) => {
       workspaceName,
       connectedAt: new Date().toISOString(),
       tokenSecretName,
+      tokenLast4: token.slice(-4),
     };
     await savePBConfig(config);
     res.json(sanitize(config));
