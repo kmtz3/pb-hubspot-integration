@@ -85,7 +85,7 @@ HubSpot Service Keys are the recommended path for server-to-server integrations:
 2. Go to **APIs & Services → Credentials → + Create Credentials → OAuth client ID**.
 3. Application type: **Web application**.
 4. Name: `pb-hubspot-sync`.
-5. **Authorised redirect URIs**: add a placeholder for now — you'll come back and add the real Cloud Run URL in step 10. Use `http://localhost:5173/auth/google/callback` so the form will save (also useful for local dev).
+5. **Authorised redirect URIs**: add a placeholder for now — you'll come back and add the real Cloud Run URL in step 10. Use `http://localhost:3000/auth/google/callback` so the form will save (also useful for local dev — `src/lib/auth.ts` always sends the dev callback on port 3000 regardless of `APP_URL`).
 6. Click **Create** and copy the **Client ID** and **Client secret**.
 
 ### 3d. Generate a session secret
@@ -109,8 +109,10 @@ cp .env.example .env
 # Leave GCP_* and GCS_JOB_NAME blank for local dev.
 # APP_URL stays as http://localhost:5173.
 
-# Add http://localhost:5173/auth/google/callback to the OAuth client's
+# Add http://localhost:3000/auth/google/callback to the OAuth client's
 # authorised redirect URIs in GCP console (you can keep it there permanently).
+# Note: APP_URL is 5173 (Vite) but the OAuth callback is hardcoded to 3000
+# (Express) in dev — see src/lib/auth.ts.
 
 npm install
 npm run dev
@@ -174,7 +176,7 @@ Replace `PROJECT_ID` with your project ID.
 
 ---
 
-## 8. Configure and apply Terraform
+## 8. Configure Terraform
 
 ```bash
 cd terraform
@@ -199,10 +201,54 @@ history_retention_days = 90
 
 > `app_url` is a chicken-and-egg problem: Cloud Run gives you the URL only after the service is created. We deploy with a placeholder, capture the real URL, then re-apply. Both passes are non-destructive.
 
-Apply (first pass):
+> **A second chicken-and-egg:** Terraform declares the three Secret Manager secret containers (`SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) but does **not** populate their versions — secret material stays out of Terraform state by design. The Cloud Run service references `version = "latest"` on each secret, so it cannot start until at least one version exists. We solve this with a two-pass apply: pass 1 creates the secret containers, you populate them, pass 2 creates Cloud Run (which can then mount them).
+
+### 8a. Apply pass 1 — secret containers only
 
 ```bash
 terraform init
+terraform apply \
+  -target=google_project_service.secretmanager \
+  -target=google_secret_manager_secret.session_secret \
+  -target=google_secret_manager_secret.google_client_id \
+  -target=google_secret_manager_secret.google_client_secret
+```
+
+Confirm with `yes`. This creates only the three empty secret containers — Cloud Run, Firestore, IAM, and the scheduler are all skipped on this pass. Takes ~30 seconds.
+
+> If Terraform errors with `Error 409: Database already exists` on `google_firestore_database.default` later in pass 2, your project already has a Firestore database. Import it instead of creating it: `terraform import google_firestore_database.default "(default)"`, then re-run apply.
+
+---
+
+## 9. Populate Secret Manager
+
+Add a version to each secret with the values from step 3.
+
+```bash
+printf '%s' "YOUR_SESSION_SECRET"   | gcloud secrets versions add SESSION_SECRET       --data-file=-
+printf '%s' "YOUR_OAUTH_CLIENT_ID"  | gcloud secrets versions add GOOGLE_CLIENT_ID     --data-file=-
+printf '%s' "YOUR_OAUTH_SECRET"     | gcloud secrets versions add GOOGLE_CLIENT_SECRET --data-file=-
+```
+
+> `printf '%s'` (no trailing newline) matters — `echo "..."` would append `\n` to the secret value, which silently breaks OAuth. `echo -n "..."` works on bash/zsh but is non-portable.
+
+> **HubSpot and Productboard tokens are NOT loaded here.** They go in via the **Connect tab** in the deployed UI (step 11). The app writes them into Secret Manager itself as `hubspot-token` and `productboard-token` and stores the version resource name in Firestore. This means the runtime SA needs `roles/secretmanager.admin` (granted by Terraform) so it can create those secrets on first connect.
+
+Verify each secret has exactly one version:
+
+```bash
+for s in SESSION_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
+  echo "=== $s ==="; gcloud secrets versions list "$s" --limit=1
+done
+```
+
+---
+
+### 9a. Apply pass 2 — everything else
+
+Now Cloud Run can mount the secrets. Run a full apply:
+
+```bash
 terraform apply
 ```
 
@@ -216,30 +262,7 @@ terraform output scheduler_job_name
 # e.g. projects/PROJECT_ID/locations/us-central1/jobs/pb-hubspot-sync-scheduler
 ```
 
-> If Terraform errors with `Error 409: Database already exists` on `google_firestore_database.default`, your project already has a Firestore database. Import it instead of creating it: `terraform import google_firestore_database.default "(default)"`, then re-run apply.
-
----
-
-## 9. Populate Secret Manager
-
-Terraform created three empty secret slots that the service needs at startup. Add a version to each one with the values from step 3.
-
-```bash
-echo -n "YOUR_SESSION_SECRET"   | gcloud secrets versions add SESSION_SECRET       --data-file=-
-echo -n "YOUR_OAUTH_CLIENT_ID"  | gcloud secrets versions add GOOGLE_CLIENT_ID     --data-file=-
-echo -n "YOUR_OAUTH_SECRET"     | gcloud secrets versions add GOOGLE_CLIENT_SECRET --data-file=-
-```
-
-> The leading `-n` on `echo` matters — it suppresses the trailing newline. A newline inside a token will cause silent auth failures. Use `printf '%s' "..."` if your shell doesn't accept `echo -n`.
-
-> **HubSpot and Productboard tokens are NOT loaded here.** They go in via the **Connect tab** in the deployed UI (step 11). The app writes them into Secret Manager itself as `hubspot-token` and `productboard-token` and stores the version resource name in Firestore. This means the runtime SA needs `roles/secretmanager.admin` (granted by Terraform) so it can create those secrets on first connect.
-
-Verify each secret has at least one version:
-
-```bash
-gcloud secrets list
-gcloud secrets versions list SESSION_SECRET
-```
+> If pass 2 still errors on `google_cloud_run_v2_service.sync` with `Secret … was not found`, double-check the verify command above — the most common cause is `gcloud secrets versions add` writing to the wrong project. Confirm with `gcloud config get-value project`.
 
 ---
 
@@ -253,7 +276,7 @@ Now that you have the real Cloud Run URL, point OAuth at it.
    https://pb-hubspot-sync-abc123-uc.a.run.app/auth/google/callback
    ```
    (use the real URL from `terraform output service_url`)
-3. Keep `http://localhost:5173/auth/google/callback` in the list if you want to continue local dev.
+3. Keep `http://localhost:3000/auth/google/callback` in the list if you want to continue local dev (the dev callback hits Express on `:3000`, not Vite on `:5173` — see `src/lib/auth.ts`).
 4. Click **Save**.
 
 Update `terraform.tfvars` with the real URL:
@@ -408,7 +431,7 @@ Now that the Cloud Run URL exists, point OAuth at it.
    https://pb-hubspot-integration-135544167760.europe-west1.run.app/auth/google/callback
    ```
    Use the actual URL from your service.
-4. Keep `http://localhost:5173/auth/google/callback` in the list if you want to continue local dev.
+4. Keep `http://localhost:3000/auth/google/callback` in the list if you want to continue local dev (the dev callback hits Express on `:3000`, not Vite on `:5173` — see `src/lib/auth.ts`).
 5. Click **Save** at the bottom of the page. Wait ~60 seconds for propagation.
 
 > If you later see `Error 400: redirect_uri_mismatch`, the most common cause is a hidden character from copy-paste. Delete the entry, save, refresh, and re-add by typing it manually.

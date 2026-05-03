@@ -77,19 +77,28 @@ resource "google_project_iam_member" "firestore_user" {
 
 resource "google_secret_manager_secret" "session_secret" {
   secret_id = "SESSION_SECRET"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
+
   depends_on = [google_project_service.secretmanager]
 }
 
 resource "google_secret_manager_secret" "google_client_id" {
   secret_id = "GOOGLE_CLIENT_ID"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
+
   depends_on = [google_project_service.secretmanager]
 }
 
 resource "google_secret_manager_secret" "google_client_secret" {
   secret_id = "GOOGLE_CLIENT_SECRET"
-  replication { auto {} }
+  replication {
+    auto {}
+  }
+
   depends_on = [google_project_service.secretmanager]
 }
 
@@ -152,7 +161,7 @@ resource "google_cloud_run_v2_service" "sync" {
       }
       env {
         name  = "SCHEDULER_OIDC_AUDIENCE"
-        value = google_cloud_run_v2_service.sync.uri
+        value = "https://sync-${var.project_id}.a.run.app"
       }
 
       # Secrets injected as env vars at runtime.
@@ -250,7 +259,7 @@ resource "google_cloud_scheduler_job" "sync" {
 
   http_target {
     http_method = "POST"
-    uri         = "${google_cloud_run_v2_service.sync.uri}/api/sync/run"
+    uri         = "${"https://sync-${var.project_id}.a.run.app"}/api/sync/run"
     body        = base64encode(jsonencode({ trigger = "scheduler" }))
     headers = {
       "Content-Type" = "application/json"
@@ -258,7 +267,7 @@ resource "google_cloud_scheduler_job" "sync" {
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email
-      audience              = google_cloud_run_v2_service.sync.uri
+      audience              = "https://sync-${var.project_id}.a.run.app"
     }
   }
 
@@ -279,7 +288,7 @@ resource "google_project_iam_member" "sync_scheduler_admin" {
 
 output "service_url" {
   description = "Cloud Run service URL"
-  value       = google_cloud_run_v2_service.sync.uri
+  value       = "https://sync-${var.project_id}.a.run.app"
 }
 
 output "scheduler_job_name" {

@@ -48,3 +48,12 @@ planning-docs/
 # Local dev store (contains API tokens — never commit)
 .dev-store.json
 .dev-tokens.json
+
+# Terraform local state and secrets (commit only main.tf, variables.tf, *.example, .terraform.lock.hcl)
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/terraform.tfvars
+terraform/*.auto.tfvars
+terraform/crash.log
+terraform/crash.*.log
