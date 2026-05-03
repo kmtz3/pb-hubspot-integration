@@ -131,14 +131,27 @@ function RunRow({ run }: { run: SyncRun }) {
         </td>
         <td style={{ padding: '12px 16px 12px 0', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>{dateLabel}</td>
         <td style={{ padding: '12px 16px 12px 0' }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
-            background: 'var(--secondary)', color: 'var(--secondary-foreground)',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            {run.trigger}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+              background: 'var(--secondary)', color: 'var(--secondary-foreground)',
+              fontFamily: 'var(--font-mono)',
+            }}>
+              {run.trigger}
+            </span>
+            {run.objectType && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center',
+                padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                background: run.objectType === 'deals' ? 'oklch(94% 0.05 255)' : 'oklch(94% 0.04 145)',
+                color: run.objectType === 'deals' ? 'oklch(42% 0.18 255)' : 'oklch(38% 0.12 145)',
+                alignSelf: 'flex-start',
+              }}>
+                {run.objectType === 'deals' ? 'deals' : 'accounts'}
+              </span>
+            )}
+          </div>
         </td>
         <td style={{ padding: '12px 16px 12px 0', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--muted-foreground)' }}>{dur}</td>
         <td style={{ padding: '12px 16px 12px 0', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
@@ -164,6 +177,29 @@ function RunRow({ run }: { run: SyncRun }) {
             {run.skipReason && (
               <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 8 }}>
                 <span style={{ fontWeight: 600 }}>Reason:</span> {run.skipReason}
+              </div>
+            )}
+            {run.objectType === 'deals' && (
+              (run.stats.contentSkipped ?? 0) > 0 ||
+              (run.stats.snippetsStripped ?? 0) > 0 ||
+              (run.stats.tagsDropped ?? 0) > 0
+            ) && (
+              <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
+                {(run.stats.contentSkipped ?? 0) > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
+                    Content skipped (feature-linked): <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{run.stats.contentSkipped}</span>
+                  </div>
+                )}
+                {(run.stats.snippetsStripped ?? 0) > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--warning)' }}>
+                    Snippets stripped by force-update: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{run.stats.snippetsStripped}</span>
+                  </div>
+                )}
+                {(run.stats.tagsDropped ?? 0) > 0 && (
+                  <div style={{ fontSize: 12, color: 'oklch(55% 0.14 40)' }}>
+                    Tags dropped (not in PB): <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{run.stats.tagsDropped}</span>
+                  </div>
+                )}
               </div>
             )}
             {run.errors.length > 0 && <ErrorTable errors={run.errors} />}
@@ -202,10 +238,19 @@ const DATE_RANGES = [
   { label: 'All time',     days: 0 },
 ];
 
+type ObjectFilter = 'all' | 'companies' | 'deals';
+
+const OBJECT_FILTER_OPTIONS: { value: ObjectFilter; label: string }[] = [
+  { value: 'all',       label: 'All'      },
+  { value: 'companies', label: 'Accounts' },
+  { value: 'deals',     label: 'Deals'    },
+];
+
 export default function History() {
   const [rangeDays, setRangeDays] = useState(30);
   const [statusFilter, setStatusFilter] = useState<SyncRun['status'] | 'all'>('all');
   const [triggerFilter, setTriggerFilter] = useState<SyncRun['trigger'] | 'all'>('all');
+  const [objectFilter, setObjectFilter] = useState<ObjectFilter>('all');
 
   const { data: runs = [], isLoading } = useSyncRuns(200);
 
@@ -215,6 +260,7 @@ export default function History() {
     if (cutoff && new Date(r.startedAt) < cutoff) return false;
     if (statusFilter !== 'all' && r.status !== statusFilter) return false;
     if (triggerFilter !== 'all' && r.trigger !== triggerFilter) return false;
+    if (objectFilter !== 'all' && r.objectType !== objectFilter) return false;
     return true;
   });
 
@@ -229,6 +275,27 @@ export default function History() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {/* Object type segmented control */}
+          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+            {OBJECT_FILTER_OPTIONS.map(({ value, label }, i) => (
+              <button
+                key={value}
+                onClick={() => setObjectFilter(value)}
+                style={{
+                  height: 28, padding: '0 10px', border: 'none',
+                  borderRight: i < OBJECT_FILTER_OPTIONS.length - 1 ? '1px solid var(--border)' : 'none',
+                  background: objectFilter === value ? 'var(--primary)' : 'var(--background)',
+                  color: objectFilter === value ? 'var(--primary-foreground)' : 'var(--foreground)',
+                  fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 500,
+                  cursor: 'pointer', whiteSpace: 'nowrap',
+                  transition: 'background 120ms',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Date range pill group */}
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
             {DATE_RANGES.map(({ label, days }) => (

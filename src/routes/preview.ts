@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { getCachedData, setCachedData } from '../lib/firestore';
 import { fetchDealPipelines, fetchDealProperties, fetchProperties, getHubSpotToken } from '../sync/hubspot';
-import { fetchEntityConfigurations } from '../sync/productboard';
+import { fetchEntityConfigurations, listTags } from '../sync/productboard';
 import type { HubSpotPipeline, HubSpotProperty } from '../types/hubspot';
-import type { PBField } from '../types/productboard';
+import type { PBField, ProductboardTag } from '../types/productboard';
 import type { HubSpotFilter } from '../types/hubspot';
 import type { ObjectType } from '../types/sync';
 
@@ -142,6 +142,29 @@ hsPropertiesRouter.get('/pipelines', async (req, res) => {
   } catch (err) {
     console.error('[hs-deal-pipelines] fetch failed:', err);
     res.status(500).json({ error: 'Failed to fetch HubSpot deal pipelines' });
+  }
+});
+
+// GET /api/productboard/tags[?refresh=true]
+// Thin proxy to listTags(). Used by the Deals → MapFields save-time tag
+// validation and the tag-name autocomplete picker. Cache TTL matches fields.
+pbFieldsRouter.get('/tags', async (req, res) => {
+  try {
+    const bypassCache = req.query.refresh === 'true';
+    if (!bypassCache) {
+      const cached = await getCachedData<ProductboardTag[]>('pb_tags');
+      if (cached && Date.now() - new Date(cached.cachedAt).getTime() < CACHE_TTL_MS) {
+        return res.json(cached.data);
+      }
+    }
+    const tags = await listTags();
+    res.json(tags);
+    setCachedData('pb_tags', tags).catch(err =>
+      console.error('[pb-tags] cache write failed (non-fatal):', err)
+    );
+  } catch (err) {
+    console.error('[pb-tags] fetch failed:', err);
+    res.status(500).json({ error: 'Failed to fetch Productboard tags' });
   }
 });
 

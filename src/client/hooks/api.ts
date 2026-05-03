@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AppConfig, SyncRun, HubSpotConfig, ProductboardConfig } from '../../types/sync';
 import type { HubSpotPipeline, HubSpotProperty, HubSpotFilter } from '../../types/hubspot';
-import type { PBField } from '../../types/productboard';
+import type { PBField, ProductboardTag } from '../../types/productboard';
+import type { DealsFieldMappings } from '../../types/sync';
 
 export interface HubSpotScopeCheck {
   scope: string;
@@ -200,12 +201,72 @@ export const useCancelSync = () =>
       apiFetch<{ cancelled: boolean }>(`/api/sync/runs/${runId}`, { method: 'DELETE' }),
   });
 
+// ── PB Tags ───────────────────────────────────────────────────────────────────
+
+export const usePbTags = () =>
+  useQuery({
+    queryKey: ['pb-tags'],
+    queryFn: () => apiFetch<ProductboardTag[]>('/api/productboard/tags'),
+    staleTime: 60 * 60 * 1000,
+  });
+
+// ── Deals config ──────────────────────────────────────────────────────────────
+
+export const useDealsConfig = () => {
+  const q = useConfig();
+  return { ...q, data: q.data?.fieldMappings?.deals };
+};
+
+export const useUpdateDealsConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (deals: DealsFieldMappings) =>
+      apiFetch<{ ok: boolean }>('/api/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldMappings: { deals } } as never),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+  });
+};
+
+// ── Backfill ──────────────────────────────────────────────────────────────────
+
+export interface BackfillRequest {
+  from: number;
+  to: number;
+  windowField: 'hs_lastmodifieddate' | 'createdate';
+}
+
+export const useTriggerBackfill = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: BackfillRequest) =>
+      apiFetch<{ runId: string }>('/api/sync/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectType: 'deals', mode: 'backfill', trigger: 'ui', ...req }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sync-runs'] }),
+  });
+};
+
 // ── Filter preview ────────────────────────────────────────────────────────────
 
 export const useFilterPreview = () =>
   useMutation({
     mutationFn: (filters: HubSpotFilter[]) =>
       apiFetch<{ count: number; total: number }>('/api/filters/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters }),
+      }),
+  });
+
+export const useDealsFilterPreview = () =>
+  useMutation({
+    mutationFn: (filters: HubSpotFilter[]) =>
+      apiFetch<{ count: number; total: number }>('/api/filters/preview?objectType=deals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filters }),

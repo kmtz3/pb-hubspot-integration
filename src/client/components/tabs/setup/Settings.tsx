@@ -11,6 +11,8 @@ type SettingsForm = Pick<SyncConfig,
   | 'historyRetentionDays'
   | 'debugLogging'
   | 'syncToPBProperty'
+  | 'multiCompanyDealNotes'
+  | 'forceContentUpdates'
 >;
 
 // ── Section card ──────────────────────────────────────────────────────────────
@@ -147,6 +149,8 @@ export default function Settings() {
       historyRetentionDays: 90,
       debugLogging: false,
       syncToPBProperty: '',
+      multiCompanyDealNotes: false,
+      forceContentUpdates: false,
     },
   });
 
@@ -159,6 +163,8 @@ export default function Settings() {
         historyRetentionDays: sync.historyRetentionDays ?? 90,
         debugLogging: sync.debugLogging ?? false,
         syncToPBProperty: sync.syncToPBProperty ?? '',
+        multiCompanyDealNotes: sync.multiCompanyDealNotes ?? false,
+        forceContentUpdates: sync.forceContentUpdates ?? false,
       });
     }
   }, [sync, reset]);
@@ -301,6 +307,31 @@ export default function Settings() {
             {config?.hubspot.portalId && <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--muted-foreground)' }}>hs_portal_id: {config.hubspot.portalId}</div>}
             {config?.productboard.workspaceName && <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--muted-foreground)' }}>pb_workspace: {config.productboard.workspaceName}</div>}
           </div>
+        </Section>
+
+        {/* Deals */}
+        <Section title="Deals" description="Behaviour for the HubSpot → Productboard deals sync.">
+          <SettingRow
+            label="Multi-company deal notes"
+            hint="When a deal is associated with more than one HubSpot company, create a separate PB note for each linked company. Disabled by default — each deal creates one note linked to its primary company."
+            ctrl={
+              <Controller name="multiCompanyDealNotes" control={control}
+                render={({ field }) => <Toggle checked={field.value ?? false} onChange={field.onChange} />} />
+            }
+          />
+          <SettingRowLast
+            label="Force content updates"
+            hint={
+              <span>
+                By default, existing PB notes linked to features are not content-updated (PB returns 422 when a note has feature links). Enable this to unlink, patch, then re-link — which deletes any feature snippets on the note.{' '}
+                <span style={{ color: 'oklch(55% 0.14 40)', fontWeight: 600 }}>Use with caution — snippet data cannot be recovered.</span>
+              </span>
+            }
+            ctrl={
+              <Controller name="forceContentUpdates" control={control}
+                render={({ field }) => <Toggle checked={field.value ?? false} onChange={field.onChange} />} />
+            }
+          />
         </Section>
 
         {/* Danger zone */}
