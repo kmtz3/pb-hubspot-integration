@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getHubSpotConfig, saveHubSpotConfig, clearHubSpotConfig, getPBConfig, savePBConfig, clearPBConfig } from '../lib/firestore';
 import { getSecret, writeSecret } from '../lib/secrets';
 import { getAccountInfo, checkScopes } from '../sync/hubspot';
-import { testConnection, checkScopes as checkPBScopes } from '../sync/productboard';
+import { checkScopes as checkPBScopes } from '../sync/productboard';
 import type { HubSpotConfig, ProductboardConfig } from '../types/sync';
 
 export const router = Router();
@@ -69,10 +69,7 @@ router.post('/productboard', async (req, res) => {
   if (!token) return res.status(400).json({ error: 'token is required' });
 
   try {
-    const [{ workspaceName }, scopes] = await Promise.all([
-      testConnection(token),
-      checkPBScopes(token),
-    ]);
+    const { workspaceName, scopes } = await checkPBScopes(token);
 
     const tokenSecretName = await writeSecret('productboard-token', token);
     const config: ProductboardConfig = {
@@ -110,10 +107,7 @@ router.get('/:system/test', async (req, res) => {
         return res.status(400).json({ error: 'Productboard is not connected' });
       }
       const token = await getSecret(config.tokenSecretName);
-      const [{ workspaceName }, scopes] = await Promise.all([
-        testConnection(token),
-        checkPBScopes(token),
-      ]);
+      const { workspaceName, scopes } = await checkPBScopes(token);
       return res.json({ ok: true, workspaceName, scopes });
     } else {
       return res.status(400).json({ error: 'unknown system' });

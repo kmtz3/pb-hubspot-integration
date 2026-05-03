@@ -192,11 +192,6 @@ export async function fetchEntityConfigurations(): Promise<PBField[]> {
   );
 }
 
-/**
- * Productboard connection probes: verifies the token by calling canonical
- * endpoints required for the sync. Mirrors HubSpot's checkScopes for UI
- * consistency in the Connect tab.
- */
 const SCOPE_PROBES = [
   {
     scope: 'Public API',
@@ -212,58 +207,47 @@ const SCOPE_PROBES = [
   },
 ];
 
-export async function checkScopes(token: string): Promise<ScopeCheck[]> {
-  const probe = async (s: (typeof SCOPE_PROBES)[number]): Promise<ScopeCheck> => {
-    try {
-      const res = await fetch(`${BASE}${s.probe}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (res.ok) {
-        return { scope: s.scope, granted: true, required: s.required, description: s.description };
-      }
-      const body = await res.json().catch(() => null) as { message?: string } | null;
-      return {
-        scope: s.scope,
-        granted: false,
-        required: s.required,
-        description: s.description,
-        error: body?.message ? `${res.status}: ${body.message}` : `Status ${res.status}`,
-      };
-    } catch (e) {
-      return {
-        scope: s.scope,
-        granted: false,
-        required: s.required,
-        description: s.description,
-        error: e instanceof Error ? e.message : String(e),
-      };
-    }
-  };
-  return Promise.all(SCOPE_PROBES.map(probe));
+async function runProbe(token: string, s: (typeof SCOPE_PROBES)[number]): Promise<ScopeCheck> {
+  try {
+    const res = await fetch(`${BASE}${s.probe}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (res.ok) return { scope: s.scope, granted: true, required: s.required, description: s.description };
+    const body = await res.json().catch(() => null) as { message?: string } | null;
+    return {
+      scope: s.scope, granted: false, required: s.required, description: s.description,
+      error: body?.message ? `${res.status}: ${body.message}` : `Status ${res.status}`,
+    };
+  } catch (e) {
+    return {
+      scope: s.scope, granted: false, required: s.required, description: s.description,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
-export async function testConnection(token: string): Promise<{ workspaceName: string | null }> {
-  const res = await fetch(`${BASE}/v2/entities/configurations?type[]=company`, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Productboard connection test failed: ${res.status}`);
-
-  // Extract workspace subdomain from links.html on any entity (feature/component/product).
-  // Pattern: "mycompany.app.productboard.com" → "mycompany"
+// Extract workspace subdomain from links.html on any entity (feature/component/product).
+// Pattern: "mycompany.app.productboard.com" → "mycompany"
+async function fetchWorkspaceName(token: string): Promise<string | null> {
   for (const type of ['feature', 'component', 'product']) {
     try {
-      const entRes = await fetch(`${BASE}/v2/entities?type[]=${type}`, {
+      const res = await fetch(`${BASE}/v2/entities?type[]=${type}`, {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
-      if (!entRes.ok) continue;
-      const entData = await entRes.json() as { data?: { links?: { html?: string } }[] };
-      const htmlLink = entData.data?.[0]?.links?.html;
-      if (htmlLink) {
-        const subdomain = new URL(htmlLink).hostname.split('.')[0];
-        return { workspaceName: subdomain };
-      }
+      if (!res.ok) continue;
+      const data = await res.json() as { data?: { links?: { html?: string } }[] };
+      const htmlLink = data.data?.[0]?.links?.html;
+      if (htmlLink) return new URL(htmlLink).hostname.split('.')[0];
     } catch (_) {}
   }
+  return null;
+}
 
-  return { workspaceName: null };
+export async function checkScopes(token: string): Promise<{ workspaceName: string | null; scopes: ScopeCheck[] }> {
+  const [scopes, workspaceName] = await Promise.all([
+    Promise.all(SCOPE_PROBES.map(s => runProbe(token, s))),
+    fetchWorkspaceName(token),
+  ]);
+  if (!scopes[0].granted) {
+    throw new Error(`Productboard connection failed: ${scopes[0].error ?? 'check your API token'}`);
+  }
+  return { workspaceName, scopes };
 }
