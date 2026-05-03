@@ -6,7 +6,7 @@ variable "project_id" {
 variable "region" {
   description = "GCP region for Cloud Run and Scheduler"
   type        = string
-  default     = "us-central1"
+  default     = "europe-west1"
 }
 
 variable "service_name" {
@@ -16,8 +16,16 @@ variable "service_name" {
 }
 
 variable "image" {
-  description = "Full container image URI (e.g. gcr.io/my-project/pb-hubspot-sync:latest)"
+  description = <<-EOT
+    Bootstrap container image used on the very first `terraform apply`.
+    The default is Google's public hello-world placeholder so a fresh
+    project applies cleanly without anyone having to push an image first.
+    Cloud Build CD owns the image attribute from the first `git push`
+    onward (see `cloudbuild.yaml` + the `ignore_changes` lifecycle on
+    `google_cloud_run_v2_service.sync` in main.tf).
+  EOT
   type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
 variable "app_url" {

@@ -1,0 +1,63 @@
+# Continuous deployment pipeline.
+#
+# Triggered by Cloud Build on push to `main`. Builds the container image,
+# pushes it to Artifact Registry, then bumps the Cloud Run service image
+# in place — leaving every other service attribute (env vars, secrets,
+# scaling, IAM) intact. Terraform owns the service shell; this file owns
+# the running image.
+#
+# Override `_SERVICE` / `_REGION` on the trigger if you spin up a second
+# environment. They match the defaults baked into terraform/variables.tf.
+
+steps:
+  # 1. Build the image. `--platform=linux/amd64` matters when Cloud Build's
+  #    pool ever runs on a non-x86 worker; explicit > implicit.
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform=linux/amd64
+      - -t
+      - ${_IMAGE}:${COMMIT_SHA}
+      - -t
+      - ${_IMAGE}:latest
+      - .
+
+  # 2. Push both tags. `:${COMMIT_SHA}` is the immutable, pinned version we
+  #    deploy below; `:latest` is a convenience pointer for humans browsing
+  #    Artifact Registry.
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, '${_IMAGE}']
+
+  # 3. Roll the new revision onto Cloud Run. `gcloud run deploy --image=…`
+  #    only updates the image attribute — env vars, secret bindings, scaling,
+  #    IAM, the OIDC SA — all stay as terraform last set them.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_IMAGE}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --quiet
+
+substitutions:
+  _SERVICE: pb-hubspot-sync
+  _REGION:  europe-west1
+  # `cloud-run-source-deploy` is the Artifact Registry repo Google
+  # auto-creates the first time you wire continuous deployment from a
+  # source repo. Trigger creation in the console provisions it; if you
+  # ever recreate the project, run:
+  #   gcloud artifacts repositories create cloud-run-source-deploy \
+  #     --repository-format=docker --location=${_REGION}
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE}/${_SERVICE}
+
+# Cloud Build needs a logging mode set when using a custom service account
+# (which we will, to grant only run.developer + artifactregistry.writer).
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s

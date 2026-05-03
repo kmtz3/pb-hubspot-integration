@@ -238,6 +238,23 @@ resource "google_cloud_run_v2_service" "sync" {
     google_project_service.run,
     google_firestore_database.default,
   ]
+
+  lifecycle {
+    # Cloud Build CD (cloudbuild.yaml at repo root) owns the running
+    # image — `gcloud run deploy --image=…` updates this attribute on
+    # every push to `main`. Without ignore_changes, the next
+    # `terraform apply` would revert to `var.image` (the bootstrap
+    # placeholder) and the user would have to re-run CD by hand.
+    #
+    # `client` and `client_version` are auto-set by whichever tool last
+    # touched the service ("gcloud" / "terraform" / "cloud-console") —
+    # they thrash on every apply otherwise.
+    ignore_changes = [
+      template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
 }
 
 # Allow unauthenticated access — Google OAuth handles app-level auth

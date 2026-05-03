@@ -1,8 +1,11 @@
 project_id            = "your-gcp-project-id"
-region                = "us-central1"
+region                = "europe-west1"
 service_name          = "pb-hubspot-sync"
-image                 = "gcr.io/your-gcp-project-id/pb-hubspot-sync:latest"
-app_url               = "https://pb-hubspot-sync-xxxxxxxx-uc.a.run.app"
+# `image` is optional — defaults to Google's hello-world placeholder.
+# Cloud Build CD takes over the image attribute on first push to main.
+# Override only if you need a different bootstrap image.
+# image               = "us-docker.pkg.dev/cloudrun/container/hello"
+app_url               = "https://pb-hubspot-sync-PROJECT_NUMBER.europe-west1.run.app"
 google_allowed_domain = "yourdomain.com"
 google_allowed_emails = ""     # optional: "admin@yourdomain.com,ops@yourdomain.com"
 sync_concurrency      = 5
