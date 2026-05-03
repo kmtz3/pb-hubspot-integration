@@ -5,6 +5,7 @@ import {
   getDealNoteRelationships,
   unlinkDealNoteRelationship,
   relinkDealNoteRelationship,
+  setDealNoteCustomer,
   getOrCreateUnassignedCompany,
 } from '../../src/sync/productboard';
 
@@ -127,6 +128,18 @@ describe('relationships endpoints', () => {
     expect(captures[0].method).toBe('POST');
     expect(captures[0].body).toEqual({
       data: { type: 'link', target: { id: 'feat-1', type: 'link' } },
+    });
+  });
+
+  it('PUT /relationships/customer replaces the customer link (used by heal pass)', async () => {
+    const captures = mockFetchSequence([{ body: { data: { type: 'customer', target: { id: 'pb-co', type: 'company' } } } }]);
+    await setDealNoteCustomer('note-1', { type: 'company', id: 'pb-co' });
+    expect(captures[0]).toMatchObject({
+      url: 'https://api.productboard.com/v2/notes/note-1/relationships/customer',
+      method: 'PUT',
+    });
+    expect(captures[0].body).toEqual({
+      data: { target: { type: 'company', id: 'pb-co' } },
     });
   });
 });

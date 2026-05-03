@@ -360,29 +360,6 @@ export async function runDealsSync(options: RunSyncOptions): Promise<SyncStats> 
       ? { pbUuid: 'pb-unassigned-dryrun' }
       : await pbClient.getOrCreateUnassignedCompany();
 
-    // Heal pass — re-resolve any placeholder-attached deal notes against the
-    // now-current company map. Runs BEFORE the main sync so newly-attached
-    // notes don't get archived by the target-set diff below.
-    if (!DRY_RUN()) {
-      try {
-        const healed = await healUnassignedNotes({
-          pbMemberEmails,
-          ownerIdToEmail,
-          userIdToEmail: new Map(),
-          unassignedPlaceholderUuid,
-          companyByHsId: companyMaps.byRecordId,
-        });
-        if (healed > 0) console.info(`runDealsSync: healed ${healed} unassigned note(s)`);
-      } catch (e) {
-        console.warn('runDealsSync: heal pass failed (continuing with main sync):', e);
-      }
-    }
-
-    // Walk every hubspot-source note once and build the deal-note index.
-    const dealNoteIndex: DealNoteIndex = DRY_RUN()
-      ? new Map()
-      : buildDealNoteMaps(await pbClient.listHubspotDealNotes());
-
     const filterGroups = dealsFilter.filterGroups ?? [];
     const lastSyncAt = mode === 'backfill'
       ? null
@@ -404,6 +381,32 @@ export async function runDealsSync(options: RunSyncOptions): Promise<SyncStats> 
     const associations = deals.length > 0
       ? await fetchDealAssociations(deals.map(d => d.id))
       : new Map<string, { primary?: string; all: string[] }>();
+
+    // Heal pass — re-resolve any placeholder-attached deal notes against the
+    // now-current PB company map and the just-fetched associations. Uses
+    // `PUT /v2/notes/{id}/relationships/customer` to swap the customer link
+    // in-place — no archive + recreate, no data loss. Runs BEFORE the
+    // dedup-index walk so the moved notes show up under their new (real)
+    // company on the same run.
+    if (!DRY_RUN()) {
+      try {
+        const healed = await healUnassignedNotes({
+          unassignedPlaceholderUuid,
+          companyByHsId: companyMaps.byRecordId,
+          dealAssociations: associations,
+        });
+        if (healed > 0) console.info(`runDealsSync: healed ${healed} unassigned note(s)`);
+      } catch (e) {
+        console.warn('runDealsSync: heal pass failed (continuing with main sync):', e);
+      }
+    }
+
+    // Walk every hubspot-source note once and build the deal-note index.
+    // Built AFTER the heal pass so any notes moved off the placeholder are
+    // indexed under their resolved company in the same run.
+    const dealNoteIndex: DealNoteIndex = DRY_RUN()
+      ? new Map()
+      : buildDealNoteMaps(await pbClient.listHubspotDealNotes());
 
     // Pre-flight tag provisioning ONCE per run (D2 + tag-handling contract).
     // Collect every tag name the run will need across staticTags + rule output
@@ -726,38 +729,30 @@ function collectDealProperties(mappings: { tags: { hsField: string }[]; body: { 
 // against the now-current PB company map. Called as the first step of every
 // runDealsSync (and exported for direct use by tests / future cron jobs).
 //
-// PB's note PATCH endpoint does NOT accept relationship changes (live-tested
-// constraint). To move the customer link, we have to recreate it via the
-// dedicated /relationships endpoints. The customer link uses target.type
-// 'company' on the CreateNotePayload shape — but PB accepts only `link`-type
-// targets on the per-note POST /relationships route. Customer relationships
-// are atomic at create time and must stay; for a heal we instead PATCH the
-// note metadata to record the new pb company uuid via a fresh create+archive
-// cycle. For Phase 4 we take the simpler path: tag the placeholder note with
-// a `needs-rehome` marker so a human can act on it, and surface healed counts
-// in the SSE stream once PB exposes a customer-link mutation. See
-// docs/internal/deals-sync-limitations.md for the followup.
+// Uses `PUT /v2/notes/{id}/relationships/customer` (operationId
+// `replaceNoteCustomerRelationship`, openapi v2 public API/notes.yaml) to
+// swap the customer link in-place — the spec guarantees a note has at most
+// one customer relationship, and PUT replaces it. No archive + recreate
+// cycle, no data loss: the note id, content, tags, owner, and feature
+// relationships are all preserved across the move.
 //
-// CONCRETE BEHAVIOR FOR PHASE 4: walk every note attached to the placeholder
-// company, parse its recordId, look up the resolved HS company in the dedup
-// map. If the resolved company exists in PB, archive the placeholder-bound
-// note and let the next regular runDealsSync recreate it under the right
-// company (the recordId stays the same; the existing note flow will see
-// `archived=true` on it and skip the dedup match, recreating cleanly under
-// the resolved company). Otherwise, leave it alone.
+// Single-mode (recordId `deal-<id>`) notes don't carry the HS company id, so
+// the heal needs the most-recent associations. The caller passes them in
+// via `dealAssociations` when available (the main runDealsSync collects
+// them right after fetchDeals). Notes whose deal isn't in the current
+// association map are skipped — their customer link will heal on the next
+// run that fetches the deal.
 
 interface HealContext {
-  pbMemberEmails: Set<string>;
-  ownerIdToEmail: Map<string, string>;
-  userIdToEmail: Map<string, string>;
   unassignedPlaceholderUuid: string;
   companyByHsId: Map<string, string>;
+  dealAssociations?: Map<string, { primary?: string; all: string[] }>;
 }
 
 export async function healUnassignedNotes(ctx: HealContext): Promise<number> {
-  // Walk every hubspot-source note and pick the ones whose first customer
-  // relationship targets the placeholder. We can't filter PB-side because
-  // the v2 notes index doesn't expose a customer-id filter.
+  // Walk every hubspot-source note. PB's notes index does not expose a
+  // customer-id filter, so we filter client-side via getDealNoteRelationships
+  // per candidate note. Archived notes are skipped.
   const notes = await pbClient.listHubspotDealNotes();
 
   let healed = 0;
@@ -779,26 +774,29 @@ export async function healUnassignedNotes(ctx: HealContext): Promise<number> {
     const customerRel = rels?.find(r => r.type === 'customer');
     if (!customerRel || customerRel.target.id !== ctx.unassignedPlaceholderUuid) continue;
 
-    // Resolve target company. Multi-mode notes carry the HS company id in
-    // their recordId; single-mode notes don't, so we can't heal them here —
-    // their customer link is recreated by the main flow when the primary
-    // association now resolves to a real PB company.
-    const resolvedTarget = parsed.companyKey
-      ? ctx.companyByHsId.get(parsed.companyKey)
-      : null;
-    if (!resolvedTarget) continue;
+    // Resolve target HS company id:
+    //   - multi-mode (`deal-X::company-Y`) → companyKey is the HS id directly
+    //   - single-mode (`deal-X`)           → look up the deal's primary
+    //     association in the run-scoped map; fall back to any associated
+    //     company. Without the map (e.g. caller didn't pass one), we can't
+    //     resolve and leave the note for the next run.
+    let resolvedHsCompanyId: string | null = null;
+    if (parsed.companyKey) {
+      resolvedHsCompanyId = parsed.companyKey;
+    } else if (ctx.dealAssociations) {
+      const a = ctx.dealAssociations.get(parsed.dealId);
+      resolvedHsCompanyId = a?.primary ?? a?.all[0] ?? null;
+    }
+    if (!resolvedHsCompanyId) continue;
 
-    // Archive the placeholder-bound note. The next runDealsSync iteration
-    // will recreate it under the resolved company because dedup keys on
-    // `archived !== true` (existing index walk already skips archived rows
-    // via `note.fields?.archived` check above on the next pass).
+    const resolvedPbUuid = ctx.companyByHsId.get(resolvedHsCompanyId);
+    if (!resolvedPbUuid || resolvedPbUuid === ctx.unassignedPlaceholderUuid) continue;
+
     try {
-      await pbClient.patchDealNote(note.id, {
-        data: { fields: { archived: true } },
-      });
+      await pbClient.setDealNoteCustomer(note.id, { type: 'company', id: resolvedPbUuid });
       healed++;
     } catch (e) {
-      console.warn(`healUnassignedNotes: failed to archive placeholder note ${note.id}:`, e);
+      console.warn(`healUnassignedNotes: failed to move customer link for note ${note.id}:`, e);
     }
   }
 

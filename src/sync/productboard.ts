@@ -410,6 +410,26 @@ export async function relinkDealNoteRelationship(noteId: string, targetId: strin
   );
 }
 
+// PUT /v2/notes/{noteId}/relationships/customer — replaces the note's customer
+// relationship in-place. Per the v2 spec, a note can be linked to one customer
+// only (a User OR a Company); calling this endpoint on a note that already
+// has a customer relationship swaps it. Used by the heal pass (D5) to move
+// placeholder-bound deal notes to their resolved PB company once it appears.
+//
+// Body shape (from openapi v2 public API/notes.yaml):
+//   { data: { target: { type: 'user' | 'company', id: '<uuid>' } } }
+export async function setDealNoteCustomer(
+  noteId: string,
+  target: { type: 'user' | 'company'; id: string }
+): Promise<void> {
+  await withRetry(() =>
+    pbRequest<unknown>(`/v2/notes/${noteId}/relationships/customer`, {
+      method: 'PUT',
+      body: JSON.stringify({ data: { target } }),
+    })
+  );
+}
+
 // Lookup-or-create the placeholder PB company that catches deal notes whose
 // HS company hasn't been synced yet (D5). Recordid `unassigned-placeholder`
 // is a fixed sentinel; lookup via metadata.source filter, fall back to a
