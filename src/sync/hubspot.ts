@@ -2,6 +2,7 @@ import type { HubSpotCompany, HubSpotFilter, HubSpotFilterGroup, HubSpotProperty
 import { getSecret } from '../lib/secrets';
 import { getHubSpotConfig } from '../lib/firestore';
 import { withRetry, type ApiResponse } from './rateLimit';
+import type { ScopeCheck } from '../types/sync';
 
 const BASE = 'https://api.hubapi.com';
 const BACKOFF_PAUSE_MS = 200;
@@ -144,14 +145,6 @@ export async function getAccountInfo(token: string): Promise<{ portalId: string;
   const data = await res.json() as { portalId: number | string; name?: string; hubName?: string; companyName?: string };
   const hubName = data.name ?? data.hubName ?? data.companyName ?? null;
   return { portalId: String(data.portalId), hubName };
-}
-
-export interface ScopeCheck {
-  scope: string;
-  granted: boolean;
-  required: boolean;
-  description: string;
-  error?: string;
 }
 
 // HubSpot scope probes: each scope is verified by calling the canonical

@@ -9,6 +9,7 @@ import type {
 } from '../types/productboard';
 import { getSecret } from '../lib/secrets';
 import { getPBConfig } from '../lib/firestore';
+import type { ScopeCheck } from '../types/sync';
 import { withRetry, parsePBHeaders, shouldBackOffPB, type ApiResponse } from './rateLimit';
 import { schemaToToken } from './mapper';
 
@@ -189,6 +190,56 @@ export async function fetchEntityConfigurations(): Promise<PBField[]> {
         constraints: def.constraints,
       }))
   );
+}
+
+/**
+ * Productboard connection probes: verifies the token by calling canonical
+ * endpoints required for the sync. Mirrors HubSpot's checkScopes for UI
+ * consistency in the Connect tab.
+ */
+const SCOPE_PROBES = [
+  {
+    scope: 'Public API',
+    probe: '/v2/entities/configurations?type[]=company',
+    required: true,
+    description: 'Access to Productboard Public API and company metadata',
+  },
+  {
+    scope: 'members.read',
+    probe: '/v2/members?limit=1',
+    required: true,
+    description: 'Resolve workspace members for owner field mapping',
+  },
+];
+
+export async function checkScopes(token: string): Promise<ScopeCheck[]> {
+  const probe = async (s: (typeof SCOPE_PROBES)[number]): Promise<ScopeCheck> => {
+    try {
+      const res = await fetch(`${BASE}${s.probe}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        return { scope: s.scope, granted: true, required: s.required, description: s.description };
+      }
+      const body = await res.json().catch(() => null) as { message?: string } | null;
+      return {
+        scope: s.scope,
+        granted: false,
+        required: s.required,
+        description: s.description,
+        error: body?.message ? `${res.status}: ${body.message}` : `Status ${res.status}`,
+      };
+    } catch (e) {
+      return {
+        scope: s.scope,
+        granted: false,
+        required: s.required,
+        description: s.description,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  };
+  return Promise.all(SCOPE_PROBES.map(probe));
 }
 
 export async function testConnection(token: string): Promise<{ workspaceName: string | null }> {

@@ -192,8 +192,10 @@ export default function Connect() {
   const [hsTestState, setHsTestState] = useState<'idle' | 'pending' | 'ok' | 'error'>('idle');
   const [hsTestMsg, setHsTestMsg] = useState('');
   const [hsScopeChecks, setHsScopeChecks] = useState<HubSpotScopeCheck[] | undefined>(undefined);
+
   const [pbTestState, setPbTestState] = useState<'idle' | 'pending' | 'ok' | 'error'>('idle');
   const [pbTestMsg, setPbTestMsg] = useState('');
+  const [pbScopeChecks, setPbScopeChecks] = useState<HubSpotScopeCheck[] | undefined>(undefined);
 
   // Surface scope health from the most recent successful HS connect mutation
   // so the user sees scope status immediately after connecting, not just on
@@ -201,16 +203,23 @@ export default function Connect() {
   const connectScopeChecks = (connectHS.data as { scopes?: HubSpotScopeCheck[] } | undefined)?.scopes;
   const hsScopes = hsScopeChecks ?? connectScopeChecks;
 
+  const connectPBScopeChecks = (connectPB.data as { scopes?: HubSpotScopeCheck[] } | undefined)?.scopes;
+  const pbScopes = pbScopeChecks ?? connectPBScopeChecks;
+
   function handleTest(system: 'hubspot' | 'productboard') {
     const setState = system === 'hubspot' ? setHsTestState : setPbTestState;
     const setMsg = system === 'hubspot' ? setHsTestMsg : setPbTestMsg;
+    
     if (system === 'hubspot') setHsScopeChecks(undefined);
+    else setPbScopeChecks(undefined);
+
     setState('pending');
     testConn.mutate(system, {
       onSuccess: (data) => {
         setState('ok');
         setMsg('Connection is healthy');
         if (system === 'hubspot' && data.scopes) setHsScopeChecks(data.scopes);
+        if (system === 'productboard' && data.scopes) setPbScopeChecks(data.scopes);
       },
       onError: (err) => { setState('error'); setMsg(err instanceof Error ? err.message : 'Test failed'); },
     });
@@ -255,7 +264,7 @@ export default function Connect() {
           title="Productboard"
           color="#6366f1"
           logoSrc="/logos/pb-icon.svg"
-          scopes={['Company read/write (v2 API)']}
+          scopes={['Public API', 'members.read']}
           setupGuideUrl="https://developer.productboard.com/#section/Authentication"
           config={data?.productboard}
           onConnect={token => connectPB.mutate(token)}
@@ -263,6 +272,7 @@ export default function Connect() {
           onTestConnection={() => handleTest('productboard')}
           testState={pbTestState}
           testMessage={pbTestMsg}
+          scopeChecks={pbScopes}
           isPending={connectPB.isPending}
         />
       </div>

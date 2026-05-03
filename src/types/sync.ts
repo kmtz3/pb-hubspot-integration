@@ -190,6 +190,14 @@ export type SyncStatus = 'success' | 'partial' | 'failed' | 'running' | 'skipped
 
 export type SseEmitter = (event: SyncEvent) => void;
 
+export interface ScopeCheck {
+  scope: string;
+  granted: boolean;
+  required: boolean;
+  description: string;
+  error?: string;
+}
+
 export type SyncEvent =
   | { type: 'progress'; processed: number; total: number; created: number; updated: number; skipped: number; errors: number; rate: number; eta: string }
   | { type: 'record'; status: 'created' | 'updated' | 'skipped' | 'error'; name: string; hsId: string; detail?: string }
@@ -207,6 +215,8 @@ export interface HubSpotConfig {
   tokenLast4?: string;
   // Browser-safe display only. Populated by the route handler before responding.
   tokenMasked?: string;
+  // Transient feedback from connection probes.
+  scopes?: ScopeCheck[];
 }
 
 export interface ProductboardConfig {
@@ -220,6 +230,8 @@ export interface ProductboardConfig {
   tokenLast4?: string;
   // Browser-safe display only. Populated by the route handler before responding.
   tokenMasked?: string;
+  // Transient feedback from connection probes.
+  scopes?: ScopeCheck[];
 }
 
 // `updateSyncConfig` accepts a partial that tolerates partial inner shapes
