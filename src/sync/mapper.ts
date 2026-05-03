@@ -82,6 +82,11 @@ export interface CoerceContext {
   nonClearableFieldIds?: Set<string>;
   /** PB per-field constraints used to format/guard values before writes. */
   fieldConstraintsById?: Map<string, PBFieldConstraints>;
+  /** HS property options lookup: property name → (internal value → display label).
+   *  Built from /crm/v3/properties/company at sync startup. Used to translate
+   *  enumeration values (e.g. "academic_programs") to display labels ("Academic Programs")
+   *  before writing to PB select / multiselect fields. */
+  hsPropertyOptions?: Map<string, Map<string, string>>;
 }
 
 // HS property-name heuristic — distinguishes owner-id sources (`hubspot_owner_id`,
@@ -168,7 +173,13 @@ export function coerceFieldValue(
     return { name: String(value) };
   }
   if (destType === 'multiselect') {
-    return [{ name: String(value) }];
+    // HubSpot returns multiselect (fieldType=checkbox) values as a semicolon-
+    // delimited string of internal values. buildCompanyFieldsPayload pre-translates
+    // these to display labels and converts to an array before coercion, but we also
+    // split inline here as a fallback for any caller that passes the raw string.
+    const items = Array.isArray(value) ? value.map(String) : String(value).split(';');
+    const names = items.map(s => s.trim()).filter(Boolean);
+    return names.length > 0 ? names.map(name => ({ name })) : null;
   }
   if (destType === 'number') {
     const n = parseFloat(String(value));
@@ -192,7 +203,8 @@ export function coerceFieldValue(
     }
     return normalized;
   }
-  // text — coerce to string
+  // text — coerce to string; arrays (from pre-translated multiselect) join with ", "
+  if (Array.isArray(value)) return value.map(String).join(', ');
   return String(value);
 }
 
@@ -263,6 +275,23 @@ export function buildCompanyFieldsPayload(
       if (rawValue === null) {
         setValue(mapping.pbFieldId, null);
         continue;
+      }
+    }
+
+    // Translate HS enumeration internal values → display labels before coercion.
+    // HubSpot multiselect (fieldType=checkbox) values arrive as semicolon-delimited
+    // internal strings like "academic_programs;academic_research". We split and
+    // resolve each token so PB receives display labels ("Academic Programs",
+    // "Academic Research") rather than raw internal values.
+    //   • select / multiselect destination: array of label strings → coerced to { name }[]
+    //   • text destination: array of label strings → joined with ", "
+    // Single-select (no semicolon) is also resolved when options are present.
+    const optMap = ctx?.hsPropertyOptions?.get(mapping.hubspotProperty);
+    if (optMap && typeof rawValue === 'string') {
+      if (rawValue.includes(';')) {
+        rawValue = rawValue.split(';').map(v => { const t = v.trim(); return optMap.get(t) ?? t; }).filter(Boolean);
+      } else {
+        rawValue = optMap.get(rawValue.trim()) ?? rawValue;
       }
     }
 

@@ -27,8 +27,26 @@ describe('schemaToToken', () => {
 describe('coerceFieldValue', () => {
   it('wraps string in object for select', () =>
     expect(coerceFieldValue('SOFTWARE', 'select')).toEqual({ name: 'SOFTWARE' }));
-  it('wraps string in array of objects for multiselect', () =>
+  it('wraps single string in array for multiselect', () =>
     expect(coerceFieldValue('SOFTWARE', 'multiselect')).toEqual([{ name: 'SOFTWARE' }]));
+  it('splits semicolon-delimited string into separate multiselect values', () =>
+    expect(coerceFieldValue('academic_programs;academic_research', 'multiselect')).toEqual([
+      { name: 'academic_programs' },
+      { name: 'academic_research' },
+    ]));
+  it('splits three-token semicolon string into separate multiselect values', () =>
+    expect(coerceFieldValue('academic_programs;academic_research;academics', 'multiselect')).toEqual([
+      { name: 'academic_programs' },
+      { name: 'academic_research' },
+      { name: 'academics' },
+    ]));
+  it('wraps pre-split array in multiselect objects', () =>
+    expect(coerceFieldValue(['Academic Programs', 'Academic Research'], 'multiselect')).toEqual([
+      { name: 'Academic Programs' },
+      { name: 'Academic Research' },
+    ]));
+  it('joins array into comma-delimited string for text', () =>
+    expect(coerceFieldValue(['Academic Programs', 'Academic Research'], 'text')).toBe('Academic Programs, Academic Research'));
   it('passes string through for text', () =>
     expect(coerceFieldValue('SOFTWARE', 'text')).toBe('SOFTWARE'));
   it('coerces number to string for text', () =>
@@ -174,6 +192,61 @@ describe('buildCompanyFieldsPayload', () => {
       nonClearableFieldIds: new Set(['owner']),
     });
     expect(result['owner']).toBeUndefined();
+  });
+
+  it('splits HS multiselect semicolon string into separate PB multiselect values', () => {
+    const company = makeHubSpotCompany({ properties: { hs_keywords: 'academic_programs;academic_research' } });
+    const mappings = [
+      makeFieldMapping({ hubspotProperty: 'hs_keywords', pbFieldId: 'keywords', pbFieldType: 'multiselect', enabled: true, locked: false }),
+    ];
+    const result = buildCompanyFieldsPayload(company, mappings);
+    expect(result['keywords']).toEqual([{ name: 'academic_programs' }, { name: 'academic_research' }]);
+  });
+
+  it('resolves HS multiselect internal values to display labels via hsPropertyOptions', () => {
+    const company = makeHubSpotCompany({ properties: { hs_keywords: 'academic_programs;academic_research;academics' } });
+    const mappings = [
+      makeFieldMapping({ hubspotProperty: 'hs_keywords', pbFieldId: 'keywords', pbFieldType: 'multiselect', enabled: true, locked: false }),
+    ];
+    const optMap = new Map([
+      ['academic_programs', 'Academic Programs'],
+      ['academic_research', 'Academic Research'],
+      ['academics', 'Academics'],
+    ]);
+    const result = buildCompanyFieldsPayload(company, mappings, {
+      hsPropertyOptions: new Map([['hs_keywords', optMap]]),
+    });
+    expect(result['keywords']).toEqual([
+      { name: 'Academic Programs' },
+      { name: 'Academic Research' },
+      { name: 'Academics' },
+    ]);
+  });
+
+  it('joins HS multiselect display labels into comma-delimited string for text destination', () => {
+    const company = makeHubSpotCompany({ properties: { hs_keywords: 'academic_programs;academic_research' } });
+    const mappings = [
+      makeFieldMapping({ hubspotProperty: 'hs_keywords', pbFieldId: 'keywords_text', pbFieldType: 'text', enabled: true, locked: false }),
+    ];
+    const optMap = new Map([
+      ['academic_programs', 'Academic Programs'],
+      ['academic_research', 'Academic Research'],
+    ]);
+    const result = buildCompanyFieldsPayload(company, mappings, {
+      hsPropertyOptions: new Map([['hs_keywords', optMap]]),
+    });
+    expect(result['keywords_text']).toBe('Academic Programs, Academic Research');
+  });
+
+  it('resolves single HS select internal value to display label', () => {
+    const company = makeHubSpotCompany({ properties: { industry: 'software' } });
+    const mappings = [
+      makeFieldMapping({ hubspotProperty: 'industry', pbFieldId: 'pb_industry', pbFieldType: 'select', enabled: true, locked: false }),
+    ];
+    const result = buildCompanyFieldsPayload(company, mappings, {
+      hsPropertyOptions: new Map([['industry', new Map([['software', 'Software']])]]),
+    });
+    expect(result['pb_industry']).toEqual({ name: 'Software' });
   });
 });
 

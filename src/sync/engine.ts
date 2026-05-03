@@ -9,7 +9,7 @@ import {
   updateSyncConfig,
   writeSyncHistory,
 } from '../lib/firestore';
-import { fetchCompanies, fetchOwnerEmailMaps } from './hubspot';
+import { fetchCompanies, fetchOwnerEmailMaps, fetchProperties } from './hubspot';
 import * as pbClient from './productboard';
 import { buildCompanyMaps, findExistingCompany } from './dedup';
 import { buildCompanyFieldsPayload, buildPatchOperations, detectOwnerIdField, stripNullFieldValues } from './mapper';
@@ -316,6 +316,28 @@ export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncSta
       }
     }
 
+    // Pre-fetch HS property options when any active mapping targets a PB
+    // select / multiselect field. Builds a propertyName → (value → label) map
+    // so HubSpot internal values like "academic_programs" become display labels
+    // like "Academic Programs" before they're written to PB.
+    let hsPropertyOptions: Map<string, Map<string, string>> | undefined;
+    const needsOptions = mappings.some(m =>
+      (m.enabled || m.locked) && (m.pbFieldType === 'select' || m.pbFieldType === 'multiselect')
+    );
+    if (needsOptions && !DRY_RUN()) {
+      try {
+        const props = await fetchProperties();
+        hsPropertyOptions = new Map();
+        for (const p of props) {
+          if (p.options && p.options.length > 0) {
+            hsPropertyOptions.set(p.name, new Map(p.options.map(o => [o.value, o.label])));
+          }
+        }
+      } catch (e) {
+        console.warn('Could not pre-load HS property options for label resolution:', e);
+      }
+    }
+
     // Walk every PB company once and build dedup maps client-side. PB's
     // search endpoint does not yet honor metadata filters (see dedup.ts), so
     // per-record search would silently match the wrong entity.
@@ -350,6 +372,7 @@ export async function runCompaniesSync(options: RunSyncOptions): Promise<SyncSta
             userIdToEmail,
             nonClearableFieldIds: requiredPBFieldIds,
             fieldConstraintsById: pbFieldConstraintsById,
+            hsPropertyOptions,
           });
 
           if (DRY_RUN()) {
