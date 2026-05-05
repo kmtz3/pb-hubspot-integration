@@ -715,7 +715,7 @@ function collectDealProperties(mappings: { tags: { hsField: string }[]; body: { 
   const set = new Set<string>([
     'dealname', 'dealstage', 'pipeline', 'amount', 'closedate',
     'hubspot_owner_id', 'hs_lastmodifieddate', 'createdate', 'description',
-    'hs_is_closed_won', 'hs_is_closed_lost',
+    'hs_is_closed_won', 'hs_is_closed',
   ]);
   for (const m of mappings.tags) if (m.hsField) set.add(m.hsField);
   for (const m of mappings.body) if (m.hsField) set.add(m.hsField);

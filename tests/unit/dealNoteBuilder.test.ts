@@ -82,10 +82,11 @@ describe('evaluateRules — operator coverage', () => {
 
   it('returns multiple tag names when multiple rules match', () => {
     const rules: TagRule[] = [
-      { field: 'hs_is_closed_won',  operator: 'EQ', value: 'true', tagName: 'closed-won'  },
-      { field: 'hs_is_closed_lost', operator: 'EQ', value: 'true', tagName: 'closed-lost' },
+      { field: 'hs_is_closed_won', operator: 'EQ', value: 'true', tagName: 'closed-won' },
+      { field: 'hs_is_closed',     operator: 'EQ', value: 'true', tagName: 'closed'      },
     ];
-    expect(evaluateRules(makeDeal({ hs_is_closed_won: 'true', hs_is_closed_lost: 'false' }), rules)).toEqual(['closed-won']);
+    // closed-won deal: both rules fire
+    expect(evaluateRules(makeDeal({ hs_is_closed_won: 'true', hs_is_closed: 'true' }), rules)).toEqual(['closed-won', 'closed']);
   });
 });
 
@@ -195,10 +196,10 @@ describe('buildDealNotePayload', () => {
   it('drops "false" boolean values and includes "true" with the field name as the tag', () => {
     const { tagsToProvision } = buildDealNotePayload({
       ...baseArgs,
-      deal: makeDeal({ hs_is_closed_won: 'true', hs_is_closed_lost: 'false' }),
+      deal: makeDeal({ hs_is_closed_won: 'true', hs_is_closed: 'false' }),
       tagMappings: [
-        { hsField: 'hs_is_closed_won',  enabled: true },
-        { hsField: 'hs_is_closed_lost', enabled: true },
+        { hsField: 'hs_is_closed_won', enabled: true },
+        { hsField: 'hs_is_closed',     enabled: true },
       ],
     });
     expect(tagsToProvision).toEqual(['hs_is_closed_won']);

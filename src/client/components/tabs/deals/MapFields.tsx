@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { Plus, Trash2, GripVertical, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { useConfig, useSaveConfig, useHSDealProperties, usePbTags } from '../../../hooks/api';
@@ -156,14 +156,18 @@ export default function DealsMapFields() {
   const pbTagNames = pbTagsData.map(t => t.name);
   const tagSrcProps = hsProps.filter(p => p.type === 'enumeration' || p.type === 'bool');
 
-  const { control, register, watch, handleSubmit, reset, setValue } = useForm<MapFieldsForm>({
+  const { control, register, watch, handleSubmit, reset, setValue, formState } = useForm<MapFieldsForm>({
     defaultValues: { tags: [], body: DEFAULT_BODY, rules: DEFAULT_RULES, staticTags: [] },
   });
 
-  const initialized = useRef(false);
+  // Sync form from config whenever the config changes AND the user hasn't
+  // started editing (isDirty = false). This handles both hard refresh and the
+  // stale-cache race where a background refetch brings fresher data after the
+  // initial render. After a successful save, onSave calls reset() to clear
+  // dirty state so the next config refetch re-anchors the form correctly.
   useEffect(() => {
-    if (initialized.current || !config?.fieldMappings?.deals) return;
-    initialized.current = true;
+    if (!config?.fieldMappings?.deals) return;
+    if (formState.isDirty) return;
     const d = config.fieldMappings.deals as DealsFieldMappings;
     reset({
       tags: d.tags ?? [],
@@ -171,7 +175,7 @@ export default function DealsMapFields() {
       rules: d.rules?.length ? d.rules : DEFAULT_RULES,
       staticTags: d.staticTags ?? [],
     });
-  }, [config?.fieldMappings?.deals, reset]);
+  }, [config, reset]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const {
     fields: tagFields, append: appendTag, remove: removeTag,
@@ -213,6 +217,9 @@ export default function DealsMapFields() {
         },
       } as never,
     });
+    // Clear dirty state so the next config refetch re-anchors the form
+    // against the freshly-saved values without overwriting user intent.
+    reset({ tags: values.tags, body: ordered, rules: values.rules, staticTags: values.staticTags });
   });
 
   function addStaticTag(name: string) {
