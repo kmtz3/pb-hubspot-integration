@@ -9,12 +9,11 @@ import { sanitizeDescription } from './sanitize';
 //
 // The engine pre-flights tags exactly once per run (D2 + tag-handling
 // contract): collect every name from staticTags + rule output + tagMappings
-// across every deal, dedup, then call `ensureTagsExist` ONCE. PB's tag-value
-// provisioning POST is currently broken (HTTP 500 — see
-// feedback_pb_tag_provisioning_unavailable.md), so unknown names are dropped
-// from the note write rather than failing it. `tagsToProvision` is therefore
-// the *requested* set; the engine intersects it with what `ensureTagsExist`
-// returns and increments `stats.tagsDropped` for the difference.
+// across every deal, dedup, then call `ensureTagsExist` ONCE. Names missing
+// from PB are auto-provisioned via `POST /v2/entities/fields/tags/values`.
+// `tagsToProvision` is therefore the *requested* set; the engine intersects
+// it with what `ensureTagsExist` returns and increments `stats.tagsDropped`
+// for any tag whose creation failed (rare — survives partial failures).
 
 // ── HTML escape ────────────────────────────────────────────────────────────
 //

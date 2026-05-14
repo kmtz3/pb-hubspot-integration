@@ -435,12 +435,10 @@ export async function setDealNoteCustomer(
 // is a fixed sentinel; lookup via metadata.source filter, fall back to a
 // create on first call.
 //
-// Tag concession: the plan called for tagging the placeholder with
-// `hubspot-unassigned`, but PB's tag-value provisioning is currently broken
-// (HTTP 500 on /v2/entities/fields/tags/values, see
-// feedback_pb_tag_provisioning_unavailable.md). We skip the tag rather than
-// 422 the whole create. Customers who need the tag can add it via the PB UI
-// once the value exists in their workspace.
+// Tag provisioning works again as of 2026-05-14, so a follow-up could add the
+// `hubspot-unassigned` tag to the placeholder via ensureTagsExist + a PATCH.
+// Left untouched for now — the placeholder is identified by metadata.source,
+// so the tag is cosmetic.
 export async function getOrCreateUnassignedCompany(): Promise<{ pbUuid: string }> {
   const RECORD_ID = 'unassigned-placeholder';
   type Page = { data: PBEntity[]; links?: { next?: string | null } };
@@ -473,28 +471,21 @@ export async function getOrCreateUnassignedCompany(): Promise<{ pbUuid: string }
   return { pbUuid: created.id };
 }
 
-// ── Tag values (D2 — auto-provisioning is currently UNAVAILABLE) ─────────────
+// ── Tag values (D2) ──────────────────────────────────────────────────────────
 //
 // Tags in PB are a single global multiselect (UUID `5252cefa-690e-58d8-…`)
 // shared by note, feature, product, component, and company. Live-tested
-// 2026-05-03: `POST /v2/entities/fields/tags/values` returns HTTP 500 even
-// with a valid `{data:{fields:{name,color}}}` body (color from the enum
-// red|blue|green|yellow|purple|gray|lime|pink). PB has not wired the
-// values-CRUD route for tags yet (`links.self: null` on every entity type's
-// `tags` field config is the public signal).
+// 2026-05-14: `POST /v2/entities/fields/tags/values` with body
+// `{data:{fields:{name}}}` returns 201 with `{data:{id}}`. Earlier 500s on
+// this endpoint are fixed.
 //
-// Until PB ships the fix:
-//   - listTags() works and is the source of truth for "which tag names exist"
-//   - createTag() throws a clear `tag.provisioning.unavailable` so callers
-//     fail loudly rather than silently dropping note writes
-//   - ensureTagsExist() filters requested names against the existing list and
-//     drops any unknown name with a logged warning — the parent note still
-//     lands with whatever tags ARE known
-//
-// The day PB unblocks the POST: `createTag` becomes a one-line implementation
-// against `/v2/entities/fields/tags/values` and `ensureTagsExist` switches
-// from drop-on-missing to create-on-missing. Reference:
-// feedback_pb_tag_provisioning_unavailable.md.
+//   - listTags() paginates the current tag list (source of truth on first
+//     call within a run)
+//   - createTag() POSTs the value endpoint and returns the new `{id, name}`
+//   - ensureTagsExist() resolves requested names against the cache; misses
+//     are auto-provisioned and cached. A creation failure for a single tag
+//     drops only that tag (with a warning) — the parent note still lands
+//     with the surviving set rather than failing the whole run.
 const TAGS_FIELD_ID = 'tags';
 
 export async function listTags(): Promise<ProductboardTag[]> {
@@ -502,31 +493,17 @@ export async function listTags(): Promise<ProductboardTag[]> {
   return values.map(v => ({ id: v.id, name: v.fields.name }));
 }
 
-export class TagProvisioningUnavailableError extends Error {
-  readonly code = 'tag.provisioning.unavailable';
-  constructor(name: string) {
-    super(
-      `Cannot create tag "${name}" — Productboard's POST /v2/entities/fields/tags/values currently returns HTTP 500. ` +
-      `Pre-seed the tag in the PB UI, or wait for PB to ship the fix. ` +
-      `See feedback_pb_tag_provisioning_unavailable.md for the live-test record.`
-    );
-    this.name = 'TagProvisioningUnavailableError';
-  }
-}
-
 export async function createTag(name: string): Promise<ProductboardTag> {
-  // Reachable today only as a guard — `ensureTagsExist` drops unknown names
-  // before they reach this path. Phase 4's note-write flow expects callers to
-  // never ask for an unprovisionable tag, so throwing is safer than returning
-  // a stub `{id: '', name}` that would later 422 the whole note write.
-  throw new TagProvisioningUnavailableError(name);
+  const { id } = await createFieldValue(TAGS_FIELD_ID, name);
+  return { id, name };
 }
 
-// Returns a `name → ProductboardTag` map for the names that exist. Names not
-// present in the PB tag list are dropped with a warning so the parent note
-// write still succeeds with the surviving tags. The cache is shared across
-// calls within a sync run so we paginate `/v2/entities/fields/tags/values`
-// at most once per run.
+// Returns a `name → ProductboardTag` map. Tags already in the cache are
+// reused; missing names are POSTed to `/v2/entities/fields/tags/values` and
+// added to the cache. If creation of a specific tag fails, that tag is
+// dropped from the result (with a warning) so the parent note write can
+// still land with the survivors. The cache is shared across calls within a
+// sync run so we paginate at most once and never re-create the same tag.
 export async function ensureTagsExist(
   names: string[],
   cache: Map<string, ProductboardTag>
@@ -540,13 +517,19 @@ export async function ensureTagsExist(
   for (const raw of names) {
     const name = raw.trim();
     if (!name) continue;
-    const tag = cache.get(name);
-    if (tag) {
-      out.set(name, tag);
-    } else {
+    const cached = cache.get(name);
+    if (cached) {
+      out.set(name, cached);
+      continue;
+    }
+    try {
+      const created = await createTag(name);
+      cache.set(name, created);
+      out.set(name, created);
+    } catch (e) {
       console.warn(
-        `ensureTagsExist: PB tag "${name}" does not exist in workspace and cannot be auto-provisioned ` +
-        `(see feedback_pb_tag_provisioning_unavailable.md). Tag will be dropped from this note write.`
+        `ensureTagsExist: failed to auto-provision PB tag "${name}" — dropping from this note write. ` +
+        `Underlying error: ${e instanceof Error ? e.message : String(e)}`
       );
     }
   }

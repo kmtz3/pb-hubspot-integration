@@ -411,9 +411,10 @@ export async function runDealsSync(options: RunSyncOptions): Promise<SyncStats> 
     // Pre-flight tag provisioning ONCE per run (D2 + tag-handling contract).
     // Collect every tag name the run will need across staticTags + rule output
     // + tagMappings × every deal, dedup, then call ensureTagsExist once. Names
-    // not present in the PB workspace are dropped from the cache; the engine
-    // intersects each deal's requested set with the cache and increments
-    // stats.tagsDropped + warnings for the difference.
+    // missing from the PB workspace are auto-created via the values endpoint.
+    // The engine still intersects each deal's requested set with the resolved
+    // cache and increments stats.tagsDropped + warnings for any that failed to
+    // provision (per-tag create errors fall back to dropping that tag only).
     const requestedTagNamesPerDeal = new Map<string, string[]>();
     const allRequestedNames = new Set<string>();
     for (const deal of deals) {
@@ -459,8 +460,8 @@ export async function runDealsSync(options: RunSyncOptions): Promise<SyncStats> 
         hsId: null,
         name: 'tags-dropped',
         detail:
-          `${droppedTagNames.size} tag name(s) requested by deals but missing from the PB workspace; ` +
-          `dropped from note writes (PB tag-value provisioning is currently unavailable — pre-seed the tags in PB before next run): ` +
+          `${droppedTagNames.size} tag name(s) requested by deals failed to auto-provision in PB ` +
+          `and were dropped from note writes: ` +
           [...droppedTagNames].sort((a, b) => a.localeCompare(b)).join(', '),
       });
     }
