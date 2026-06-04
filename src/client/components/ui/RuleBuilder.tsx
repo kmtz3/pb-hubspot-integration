@@ -31,7 +31,7 @@ export default function RuleBuilder({ rule, onChange, onRemove, hsProps, pbTags 
   const operators = OPERATORS_BY_TYPE[propType] ?? OPERATORS_BY_TYPE['string']!;
   const isMultiValue = MULTI_VALUE_OPS.has(rule.operator);
   const noValue = NO_VALUE_OPS.has(rule.operator);
-  const tagWarning = Boolean(rule.tagName) && pbTags.length > 0 && !pbTags.includes(rule.tagName);
+  const tagIsNew = Boolean(rule.tagName) && pbTags.length > 0 && !pbTags.includes(rule.tagName);
 
   const propGroups = useMemo(() => {
     const grouped: Record<string, HubSpotProperty[]> = {};
@@ -55,7 +55,7 @@ export default function RuleBuilder({ rule, onChange, onRemove, hsProps, pbTags 
   );
 
   return (
-    <div style={{ marginBottom: tagWarning ? 2 : 6 }}>
+    <div style={{ marginBottom: tagIsNew ? 2 : 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
 
         {/* Field picker – searchable + categorized */}
@@ -137,9 +137,8 @@ export default function RuleBuilder({ rule, onChange, onRemove, hsProps, pbTags 
           list={TAG_DATALIST_ID}
           placeholder="Tag name…"
           style={{
-            border: `1px solid ${tagWarning ? 'oklch(80% 0.14 85)' : 'var(--border)'}`,
+            border: '1px solid var(--border)',
             borderRadius: 6, padding: '6px 8px', fontSize: 12, flex: 1, minWidth: 80,
-            background: tagWarning ? 'oklch(97% 0.07 90)' : undefined,
           }}
         />
 
@@ -149,9 +148,9 @@ export default function RuleBuilder({ rule, onChange, onRemove, hsProps, pbTags 
         </button>
       </div>
 
-      {tagWarning && (
-        <div style={{ fontSize: 11, color: 'oklch(50% 0.14 40)', paddingLeft: 4, paddingTop: 3, paddingBottom: 2 }}>
-          "{rule.tagName}" is not in the PB workspace — pre-seed it in Productboard before the next run.
+      {tagIsNew && (
+        <div style={{ fontSize: 11, color: 'var(--muted-foreground)', paddingLeft: 4, paddingTop: 3, paddingBottom: 2 }}>
+          "{rule.tagName}" will be created in Productboard automatically on the next run.
         </div>
       )}
     </div>

@@ -204,7 +204,7 @@ npm run typecheck        # tsc --noEmit (server + client tsconfigs)
 Before writing any Productboard API call, check PBToolkit for an existing, tested implementation:
 
 ```
-~/Library/Mobile Documents/com~apple~CloudDocs/Projects/pb-tools/PBToolkit
+~/Projects/pb-tools/PBToolkit
 ├── src/routes/          # Tested route handlers – source of truth for call structure
 │   ├── companies.js     # Company / account endpoints
 │   ├── entities.js      # Features, components, products
@@ -232,7 +232,7 @@ Before writing any Productboard API call, check PBToolkit for an existing, teste
 
 ## What Claude should do
 
-- **Check PBToolkit before writing any PB API call** – `~/Library/Mobile Documents/com~apple~CloudDocs/Projects/pb-tools/PBToolkit/src/routes/` has tested implementations; reuse the call shape
+- **Check PBToolkit before writing any PB API call** – `~/Projects/pb-tools/PBToolkit/src/routes/` has tested implementations; reuse the call shape
 - Prefer small, composable functions over large classes
 - Write tests alongside new sync logic (Jest)
 - Check for existing mappers in `src/sync/mapper.ts` before creating new ones

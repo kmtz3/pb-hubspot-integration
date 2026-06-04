@@ -146,11 +146,9 @@ export interface SyncStats {
   // resolves an HS email that is NOT in the PB workspace member set, so the
   // owner field gets dropped pre-flight. Used by both companies and deals.
   ownerSkipped?: number;
-  // Phase 4: count of tag names the run requested but PB's tag list didn't
-  // contain. PB's tag-value provisioning POST currently 500s (see
-  // feedback_pb_tag_provisioning_unavailable.md), so unknown names are dropped
-  // from the note write rather than failing it. The dropped names land in
-  // `SyncRun.warnings` so the user can pre-seed them in PB.
+  // Count of tag names that couldn't be auto-provisioned via POST
+  // /v2/entities/fields/tags/values (individual failures are caught per-tag
+  // and dropped gracefully rather than failing the whole run).
   tagsDropped?: number;
 }
 
