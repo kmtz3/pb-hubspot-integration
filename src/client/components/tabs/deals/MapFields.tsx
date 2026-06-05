@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
-import { Plus, Trash2, GripVertical, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Plus, Trash2, GripVertical, CheckCircle, X } from 'lucide-react';
 import { useConfig, useSaveConfig, useHSDealProperties, usePbTags } from '../../../hooks/api';
 import RuleBuilder, { TAG_DATALIST_ID } from '../../ui/RuleBuilder';
 import InlineAlert from '../../ui/InlineAlert';
@@ -331,16 +331,15 @@ export default function DealsMapFields() {
             {staticTags.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                 {staticTags.map(tag => {
-                  const warn = pbTagNames.length > 0 && !pbTagNames.includes(tag);
+                  const isNew = pbTagNames.length > 0 && !pbTagNames.includes(tag);
                   return (
-                    <span key={tag} style={{
+                    <span key={tag} title={isNew ? 'Will be created in Productboard on the first run' : undefined} style={{
                       display: 'inline-flex', alignItems: 'center', gap: 4,
                       padding: '3px 8px 3px 10px', borderRadius: 20, fontSize: 12,
-                      background: warn ? 'oklch(97% 0.07 90)' : 'var(--secondary)',
-                      border: `1px solid ${warn ? 'oklch(80% 0.14 85)' : 'var(--border)'}`,
-                      color: warn ? 'oklch(40% 0.14 40)' : 'var(--secondary-foreground)',
+                      background: 'var(--secondary)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--secondary-foreground)',
                     }}>
-                      {warn && <AlertTriangle size={10} style={{ flexShrink: 0 }} />}
                       {tag}
                       <button type="button" onClick={() => removeStaticTag(tag)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'inherit', display: 'flex', alignItems: 'center' }}>

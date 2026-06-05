@@ -6,8 +6,13 @@ import type { ObjectType, SseEmitter, SyncEvent, SyncMode } from '../types/sync'
 
 export const router = Router();
 
-// In-memory map of SSE emitters keyed by runId
+// Live SSE writer registered when the client's EventSource GET arrives.
 const sseEmitters = new Map<string, SseEmitter>();
+
+// Events emitted before the client's EventSource GET arrives are buffered
+// here so the stream can drain them immediately on connect. Entries are
+// removed once the 'done' event is either buffered or drained.
+const sseBuffers = new Map<string, SyncEvent[]>();
 
 // A run that hasn't updated its lock in this long is treated as dead. Cloud
 // Run can kill an instance after the request returns 200 (the actual sync
@@ -93,9 +98,19 @@ router.post('/run', async (req, res) => {
     // subscribe to /stream for live progress. The active SSE connection from
     // the browser keeps the instance alive for the full sync duration. If the
     // user closes the tab mid-sync, the stale-lock fallback above recovers.
+    //
+    // Events emitted before the client's EventSource GET arrives are buffered
+    // in sseBuffers so the stream can drain them immediately on connect,
+    // avoiding a race where a fast skip/complete run is never surfaced.
+    sseBuffers.set(runId, []);
+
     const emitter: SseEmitter = (event) => {
       const fn = sseEmitters.get(runId);
-      if (fn) fn(event);
+      if (fn) {
+        fn(event);
+      } else {
+        sseBuffers.get(runId)?.push(event);
+      }
     };
 
     setImmediate(async () => {
@@ -105,6 +120,7 @@ router.post('/run', async (req, res) => {
         console.error(`Sync run ${runId} failed:`, err);
       } finally {
         sseEmitters.delete(runId);
+        sseBuffers.delete(runId);
       }
     });
 
@@ -132,6 +148,17 @@ router.get('/runs/:id/stream', (req, res) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
     if (event.type === 'done') res.end();
   };
+
+  // Drain any events that fired before this GET arrived (race window between
+  // POST /run returning and the client opening the EventSource).
+  const buffered = sseBuffers.get(id);
+  if (buffered) {
+    for (const event of buffered) send(event);
+    sseBuffers.delete(id);
+    // If the sync already finished (done was in the buffer), the response is
+    // already ended — don't register a live emitter for a completed run.
+    if (res.writableEnded) return;
+  }
 
   sseEmitters.set(id, send);
 
